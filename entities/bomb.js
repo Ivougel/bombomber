@@ -23,9 +23,13 @@ function getBombBlastTiles(map, col, row, range) {
       const c = col + dc * i;
       const r = row + dr * i;
       const tile = tileAt(map, c, r);
-      if (tile === TILE.WALL || tile === TILE.VOID) break;
+      if (tile === TILE.VOID) break;
+      if (tile === TILE.WALL_HARD) break;
+      if (tile === TILE.COLUMN) {
+        tiles.push({ col: c, row: r });
+        break;
+      }
       tiles.push({ col: c, row: r });
-      if (tile === TILE.COLUMN) break;
     }
   }
   return tiles;
@@ -36,7 +40,7 @@ function tileHasBomb(bombs, col, row) {
 }
 
 function tryPlaceBomb(player, bombs, map, fuseTime) {
-  if (!player.alive || !player.loadout?.bombs) return false;
+  if (!player.alive || !player.loadout?.hasBombs) return false;
   const col = Math.floor(player.x / TILE_SIZE);
   const row = Math.floor(player.y / TILE_SIZE);
   const tile = tileAt(map, col, row);
@@ -44,7 +48,6 @@ function tryPlaceBomb(player, bombs, map, fuseTime) {
   if (tileHasBomb(bombs, col, row)) return false;
 
   bombs.push(createBomb(player.x, player.y, player, fuseTime));
-  player.loadout.bombs--;
   return true;
 }
 
@@ -59,6 +62,11 @@ function updateBombs(bombs, map, mobs, players, effects, blastRange, blastDamage
     spawnExplosion(effects, tiles, blastDamage, bomb.owner);
 
     for (const tile of tiles) {
+      const i = tile.row * MAP_W + tile.col;
+      if (map.tiles[i] === TILE.WALL_SOFT) {
+        map.tiles[i] = TILE.FLOOR;
+      }
+
       const wx = (tile.col + 0.5) * TILE_SIZE;
       const wy = (tile.row + 0.5) * TILE_SIZE;
 
@@ -85,9 +93,10 @@ function updateBombs(bombs, map, mobs, players, effects, blastRange, blastDamage
   return bombs.filter((b) => b.alive);
 }
 
-function drawBombs(ctx, bombs) {
+function drawBombs(ctx, bombs, fogMap) {
   for (const bomb of bombs) {
     if (!bomb.alive) continue;
+    if (fogMap && !isWorldVisible(fogMap, bomb.x, bomb.y)) continue;
     const pulse = 0.85 + Math.sin(bomb.fuse * 8) * 0.15;
     ctx.fillStyle = "#2a2a2a";
     ctx.beginPath();

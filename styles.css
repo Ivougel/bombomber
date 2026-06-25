@@ -277,6 +277,12 @@ html, body {
   margin-bottom: 16px;
 }
 
+.backpack-hint {
+  font-size: 13px;
+  opacity: 0.7;
+  margin-bottom: 12px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

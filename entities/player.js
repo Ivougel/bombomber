@@ -10,6 +10,7 @@ function createPlayerEntity(state, x, y) {
     spawnY: y,
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
+    baseSpeed: PLAYER_BASE_SPEED,
     speed: PLAYER_BASE_SPEED,
     radius: PLAYER_RADIUS,
     moveDir: { x: 0, y: 0 },
@@ -48,14 +49,17 @@ function updatePlayerEntity(p, dt, input, camera) {
 
   const dir = input.getMoveDir();
   p.moveDir = dir;
-  const aim = input.getAimDir({ x: p.x, y: p.y }, camera);
+  const aim = input.getAimDir();
   if (aim.x !== 0 || aim.y !== 0) {
     p.aimDir = aim;
-  } else if (dir.x !== 0 || dir.y !== 0) {
-    p.aimDir = { ...dir };
+  } else {
+    const fire = input.getFireDir();
+    if (fire.x !== 0 || fire.y !== 0) p.aimDir = { ...fire };
+    else if (dir.x !== 0 || dir.y !== 0) p.aimDir = { ...dir };
   }
 
-  const speed = p.speed;
+  const speed = input.isSprintHeld() ? p.baseSpeed * 1.8 : p.baseSpeed;
+  p.speed = speed;
   const vx = dir.x * speed * dt;
   const vy = dir.y * speed * dt;
   const resolved = resolveCircleMovement(p.x, p.y, vx, vy, p.radius);
@@ -102,14 +106,14 @@ function updatePlayerAura(p, mobs, dt, effects, onMobKilled) {
   }
 }
 
-function tryFireWeapon(p, projectiles) {
+function tryFireWeapon(p, projectiles, fireDir) {
   if (!p.alive || !p.loadout.weapon || p.weaponCooldown > 0) return false;
-  if (p.aimDir.x === 0 && p.aimDir.y === 0) return false;
+  if (!fireDir || (fireDir.x === 0 && fireDir.y === 0)) return false;
 
   const def = getItemDef(p.loadout.weapon);
   if (!def) return false;
 
-  projectiles.push(createPlayerProjectile(p.x, p.y, p.aimDir.x, p.aimDir.y, p.id, def));
+  projectiles.push(createPlayerProjectile(p.x, p.y, fireDir.x, fireDir.y, p.id, def));
   p.weaponCooldown = def.cooldown;
   return true;
 }

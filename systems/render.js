@@ -1,6 +1,31 @@
 /** Отрисовка карты и сущностей */
 
-function drawMap(ctx, map, camBounds) {
+function drawWallHard(ctx, x, y) {
+  ctx.fillStyle = "#4a4a4a";
+  ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.fillRect(x, y + TILE_SIZE - 4, TILE_SIZE, 4);
+}
+
+function drawWallSoft(ctx, x, y) {
+  ctx.fillStyle = "#7a6a5a";
+  ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 1;
+  const cracks = [
+    [x + 6, y + 8, x + 18, y + 14],
+    [x + 12, y + 20, x + 22, y + 26],
+    [x + 4, y + 22, x + 14, y + 28],
+  ];
+  for (const [x1, y1, x2, y2] of cracks) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+}
+
+function drawMap(ctx, map, camBounds, fogMap) {
   const minCol = Math.max(0, Math.floor((-camBounds?.camX || 0) / TILE_SIZE) - 1);
   const maxCol = Math.min(MAP_W - 1, minCol + Math.ceil((camBounds?.worldW || WORLD_W) / TILE_SIZE) + 2);
   const minRow = Math.max(0, Math.floor((-camBounds?.camY || 0) / TILE_SIZE) - 1);
@@ -8,6 +33,8 @@ function drawMap(ctx, map, camBounds) {
 
   for (let row = minRow; row <= maxRow; row++) {
     for (let col = minCol; col <= maxCol; col++) {
+      if (fogMap && !isTileRevealed(fogMap, col, row)) continue;
+
       const i = row * MAP_W + col;
       const tile = map.tiles[i];
       if (tile === TILE.VOID) continue;
@@ -30,11 +57,10 @@ function drawMap(ctx, map, camBounds) {
           ctx.textAlign = "center";
           ctx.fillText("🚪", x + TILE_SIZE / 2, y + TILE_SIZE / 2 + 5);
         }
-      } else if (tile === TILE.WALL) {
-        ctx.fillStyle = colors.wall;
-        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-        ctx.fillStyle = "rgba(0,0,0,0.15)";
-        ctx.fillRect(x, y + TILE_SIZE - 4, TILE_SIZE, 4);
+      } else if (tile === TILE.WALL_HARD || tile === TILE.WALL) {
+        drawWallHard(ctx, x, y);
+      } else if (tile === TILE.WALL_SOFT) {
+        drawWallSoft(ctx, x, y);
       } else if (tile === TILE.COLUMN) {
         ctx.fillStyle = colors.floor;
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
@@ -90,10 +116,11 @@ function drawPlayer(ctx, p) {
   ctx.globalAlpha = 1;
 }
 
-function drawDropZones(ctx, mobs) {
+function drawDropZones(ctx, mobs, fogMap) {
   for (const mob of mobs) {
     if (mob.alive || !mob.dropZone) continue;
     const dz = mob.dropZone;
+    if (fogMap && !isWorldVisible(fogMap, dz.x, dz.y)) continue;
     ctx.strokeStyle = "rgba(255,215,0,0.35)";
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(dz.x - 14, dz.y - 14, 28, 28);
@@ -105,19 +132,14 @@ function drawDropZones(ctx, mobs) {
   }
 }
 
-function drawWorld(ctx, map, players, mobs, projectiles, bombs, effects, camera, pixelRatio, cssW, cssH) {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#0a0a0c";
-  ctx.fillRect(0, 0, cssW * pixelRatio, cssH * pixelRatio);
+function drawWorldScene(ctx, map, players, mobs, projectiles, bombs, effects, fogState, camBounds) {
+  const fogMap = fogState?.map ?? null;
 
-  ctx.save();
-  const camBounds = applyWorldTransform(ctx, camera, pixelRatio);
-
-  drawMap(ctx, map, camBounds);
-  drawExplosions(ctx, effects);
-  drawBombs(ctx, bombs);
-  for (const mob of mobs) drawMob(ctx, mob);
-  drawDropZones(ctx, mobs);
+  drawMap(ctx, map, camBounds, fogMap);
+  drawExplosions(ctx, effects, fogMap);
+  drawBombs(ctx, bombs, fogMap);
+  for (const mob of mobs) drawMob(ctx, mob, fogMap);
+  drawDropZones(ctx, mobs, fogMap);
 
   for (const p of players) {
     const auraDef = p.loadout?.passive ? getItemDef(p.loadout.passive) : null;
@@ -125,7 +147,7 @@ function drawWorld(ctx, map, players, mobs, projectiles, bombs, effects, camera,
   }
 
   for (const proj of projectiles) {
-    if (proj.alive) drawProjectile(ctx, proj);
+    if (proj.alive) drawProjectile(ctx, proj, fogMap);
   }
 
   for (const p of players) {
@@ -136,8 +158,58 @@ function drawWorld(ctx, map, players, mobs, projectiles, bombs, effects, camera,
     }
   }
 
-  drawDamageArrows(ctx, effects);
+  drawDamageArrows(ctx, effects, fogMap);
+  drawFloatingTexts(ctx, effects, fogMap);
+  renderFog(ctx, fogState);
+}
+
+function drawMagnifier(ctx, player, camera, pixelRatio, sceneArgs) {
+  const screen = worldToScreen(camera, player.x, player.y);
+  const cx = screen.x * pixelRatio;
+  const cy = screen.y * pixelRatio;
+  const radius = 220 * pixelRatio;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.clip();
+
+  const zoomScale = camera.scale * pixelRatio * 3;
+  const offsetX = cx - player.x * zoomScale;
+  const offsetY = cy - player.y * zoomScale;
+  ctx.setTransform(zoomScale, 0, 0, zoomScale, offsetX, offsetY);
+
+  const camBounds = { camX: 0, camY: 0, worldW: camera.mapPixelW, worldH: camera.mapPixelH };
+  drawWorldScene(ctx, ...sceneArgs, camBounds);
+
   ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = "#ffd56a";
+  ctx.lineWidth = 3 * pixelRatio;
+  ctx.shadowColor = "#ffd56a";
+  ctx.shadowBlur = 12 * pixelRatio;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawWorld(ctx, map, players, mobs, projectiles, bombs, effects, fogState, camera, pixelRatio, cssW, cssH, zoomActive) {
+  const sceneArgs = [map, players, mobs, projectiles, bombs, effects, fogState];
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0a0a0c";
+  ctx.fillRect(0, 0, cssW * pixelRatio, cssH * pixelRatio);
+
+  ctx.save();
+  const camBounds = applyWorldTransform(ctx, camera, pixelRatio);
+  drawWorldScene(ctx, ...sceneArgs, camBounds);
+  ctx.restore();
+
+  if (zoomActive && players[0]?.alive) {
+    drawMagnifier(ctx, players[0], camera, pixelRatio, sceneArgs);
+  }
 }
 
 function formatTime(sec) {
@@ -215,18 +287,35 @@ function renderResultsOverlay(match, roundState, stats) {
   `;
 }
 
+function renderBackpackPanel(player, heading) {
+  const title = heading || `Рюкзак — ${player.class}`;
+  return `
+    <div class="backpack-panel">
+      <h3>${title}</h3>
+      <p>💰 ${player.gold} · Предметов: ${player.backpack.length}</p>
+      <ul class="backpack-list">${player.backpack.length
+        ? player.backpack.map((item) => `<li>${item}</li>`).join("")
+        : "<li class='empty'>Рюкзак пуст</li>"}</ul>
+    </div>
+  `;
+}
+
+function renderBackpackOverlay(player) {
+  const el = document.getElementById("backpack-content");
+  if (!el) return;
+  el.innerHTML = `
+    <h2>🎒 Рюкзак</h2>
+    <p class="backpack-hint">Tab или Escape — закрыть</p>
+    ${renderBackpackPanel(player)}
+  `;
+}
+
 function renderIntermissionOverlay(match) {
   const el = document.getElementById("intermission-content");
   if (!el) return;
-  el.innerHTML = match.players.map((p, i) => `
-    <div class="backpack-panel">
-      <h3>${isSoloMode() ? "Рюкзак" : `Игрок ${i + 1}`} — ${p.class}</h3>
-      <p>💰 ${p.gold} · Предметов: ${p.backpack.length}</p>
-      <ul class="backpack-list">${p.backpack.length
-        ? p.backpack.map((item) => `<li>${item}</li>`).join("")
-        : "<li class='empty'>Рюкзак пуст</li>"}</ul>
-    </div>
-  `).join("");
+  el.innerHTML = match.players.map((p, i) =>
+    renderBackpackPanel(p, isSoloMode() ? `Рюкзак — ${p.class}` : `Игрок ${i + 1} — ${p.class}`)
+  ).join("");
 }
 
 function renderMatchEndOverlay(match) {
@@ -271,7 +360,7 @@ function renderClassSelect() {
           <span>Мобильность · дальний урон</span>
         </div>
       </div>
-      <p class="class-hint">WASD — движение · мышь — прицел · Space — оружие · B — бомба</p>
+      <p class="class-hint">WASD — движение · мышь — прицел · Space — оружие · B — бомба · Shift — спринт · Q — лупа вкл/выкл · Tab — рюкзак</p>
       <button type="button" class="btn" id="btn-to-shop" disabled>В магазин →</button>
     `;
     return;

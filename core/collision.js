@@ -1,7 +1,11 @@
 /** Коллизия круга с тайловой картой (скользящая) */
 
 function isSolidTile(tile) {
-  return tile === TILE.WALL || tile === TILE.COLUMN;
+  return tile === TILE.WALL_HARD || tile === TILE.WALL_SOFT || tile === TILE.COLUMN;
+}
+
+function isDestructibleWall(tile) {
+  return tile === TILE.WALL_SOFT;
 }
 
 function isWalkableTile(tile) {
@@ -9,7 +13,7 @@ function isWalkableTile(tile) {
 }
 
 function tileAt(map, col, row) {
-  if (col < 0 || row < 0 || col >= MAP_W || row >= MAP_H) return TILE.WALL;
+  if (col < 0 || row < 0 || col >= MAP_W || row >= MAP_H) return TILE.WALL_HARD;
   return map.tiles[row * MAP_W + col];
 }
 

@@ -1,7 +1,7 @@
-/** Визуальные эффекты: стрелки урона, вспышки ауры */
+/** Визуальные эффекты: стрелки урона, вспышки ауры, плавающий текст */
 
 function createEffectsState() {
-  return { damageArrows: [], explosions: [], auraPulse: 0 };
+  return { damageArrows: [], explosions: [], auraPulse: 0, floatingTexts: [] };
 }
 
 function spawnDamageArrow(effects, targetX, targetY, sourceX, sourceY, amount, type) {
@@ -17,6 +17,16 @@ function spawnDamageArrow(effects, targetX, targetY, sourceX, sourceY, amount, t
     type,
     life: 0.85,
     maxLife: 0.85,
+  });
+}
+
+function spawnFloatingText(effects, x, y, text, duration = 1.5) {
+  effects.floatingTexts.push({
+    x,
+    y,
+    text,
+    life: duration,
+    maxLife: duration,
   });
 }
 
@@ -43,10 +53,17 @@ function updateEffects(effects, dt) {
 
   for (const ex of effects.explosions) ex.life -= dt;
   effects.explosions = effects.explosions.filter((ex) => ex.life > 0);
+
+  for (const ft of effects.floatingTexts) {
+    ft.life -= dt;
+    ft.y -= 28 * dt;
+  }
+  effects.floatingTexts = effects.floatingTexts.filter((ft) => ft.life > 0);
 }
 
-function drawDamageArrows(ctx, effects) {
+function drawDamageArrows(ctx, effects, fogMap) {
   for (const a of effects.damageArrows) {
+    if (fogMap && !isWorldVisible(fogMap, a.x, a.y)) continue;
     const t = 1 - a.life / a.maxLife;
     const alpha = 1 - t;
     const len = 22 + t * 14;
@@ -77,6 +94,24 @@ function drawDamageArrows(ctx, effects) {
     ctx.font = "bold 11px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(`-${a.amount}`, a.x + px * 10, a.y + py * 10 - 6);
+  }
+}
+
+function drawFloatingTexts(ctx, effects, fogMap) {
+  for (const ft of effects.floatingTexts) {
+    if (fogMap && !isWorldVisible(fogMap, ft.x, ft.y)) continue;
+    const alpha = Math.min(1, ft.life / ft.maxLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = "bold 13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffd56a";
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.lineWidth = 3;
+    ctx.strokeText(ft.text, ft.x, ft.y);
+    ctx.fillText(ft.text, ft.x, ft.y);
+    ctx.restore();
   }
 }
 
@@ -111,10 +146,11 @@ function drawPlayerAuraGlow(ctx, player, effects) {
   ctx.restore();
 }
 
-function drawExplosions(ctx, effects) {
+function drawExplosions(ctx, effects, fogMap) {
   for (const ex of effects.explosions) {
     const alpha = ex.life / ex.maxLife;
     for (const tile of ex.tiles) {
+      if (fogMap && !isTileVisible(fogMap, tile.col, tile.row)) continue;
       const x = tile.col * TILE_SIZE;
       const y = tile.row * TILE_SIZE;
       ctx.fillStyle = `rgba(255,140,40,${alpha * 0.75})`;

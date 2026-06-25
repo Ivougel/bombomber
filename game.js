@@ -49,7 +49,7 @@ function resize() {
   canvas.height = Math.floor(viewH * dpr);
   canvas.style.width = `${viewW}px`;
   canvas.style.height = `${viewH}px`;
-  recalcCamera(camera, viewW, viewH);
+  recalcCamera(camera, viewW, viewH, WORLD_W, WORLD_H);
 }
 
 function bindClassSelect() {
@@ -139,8 +139,7 @@ function startRound() {
   const statePlayer = match.players[0];
   const players = [createPlayerEntity(statePlayer, map.spawnP1.x, map.spawnP1.y)];
 
-  camera.viewport.leadX = players[0].x;
-  camera.viewport.leadY = players[0].y;
+  recalcCamera(camera, viewW, viewH, WORLD_W, WORLD_H);
 
   const rng = createRng(seed);
   const mobs = spawnMobs(map, getRoundBudget(match.round), rng);
@@ -152,17 +151,24 @@ function startRound() {
     projectiles: [],
     bombs: [],
     effects: createEffectsState(),
+    fogState: createFogState(map.fogMap),
     timeLeft: ROUND_DURATION,
     resultsTimer: 0,
     intermissionTimer: 0,
     roundWon: false,
     stats: [{ kills: 0, damage: 0, items: 0 }],
+    inventoryOpen: false,
+    paused: false,
   };
 
   match.phase = "playing";
   showOverlay("results-overlay", false);
   showOverlay("intermission-overlay", false);
+  input.getPlayer(0).resetZoom();
   mobIdCounter = 0;
+
+  updateFog(roundState.fogState, players[0], map);
+  markFogDirty(roundState.fogState);
 }
 
 function gameLoop(ts) {
@@ -192,25 +198,61 @@ function update(dt) {
   if (match.phase === "playing") updateHud(hud, match, roundState);
 }
 
+function toggleInventory() {
+  if (!roundState) return;
+  roundState.inventoryOpen = !roundState.inventoryOpen;
+  roundState.paused = roundState.inventoryOpen;
+  if (roundState.inventoryOpen) {
+    renderBackpackOverlay(match.players[0]);
+    showOverlay("backpack-overlay", true);
+  } else {
+    showOverlay("backpack-overlay", false);
+  }
+}
+
+function closeInventory() {
+  if (!roundState?.inventoryOpen) return;
+  roundState.inventoryOpen = false;
+  roundState.paused = false;
+  showOverlay("backpack-overlay", false);
+}
+
 function onMobKilled(player, mob) {
   if (mob.dropZone) collectDrop(player, mob);
 }
 
 function updatePlaying(dt) {
   const { players, mobs, projectiles, bombs, effects, map } = roundState;
-  roundState.timeLeft -= dt;
 
   const p = players[0];
   const inp = input.getPlayer(0);
+  inp.refresh({ x: p.x, y: p.y }, camera);
+
+  if (inp.consumeBackpack()) toggleInventory();
+  if (inp.consumeCancel() && roundState.inventoryOpen) closeInventory();
+  inp.consumeZoomToggle();
+
+  if (roundState.paused) {
+    updateEffects(effects, dt);
+    return;
+  }
+
+  roundState.timeLeft -= dt;
+
   updatePlayerEntity(p, dt, inp, camera);
 
   updatePlayerAura(p, mobs, dt, effects, onMobKilled);
 
-  if (inp.consumeAttack()) tryFireWeapon(p, projectiles);
+  const fireDir = inp.getFireDir();
+  if (inp.consumeShoot()) tryFireWeapon(p, projectiles, fireDir);
 
-  if (inp.consumeBomb() && p.loadout.bombs > 0) {
-    const bombDef = getItemDef("bomb");
-    tryPlaceBomb(p, bombs, map, bombDef.fuseTime);
+  if (inp.consumeBomb()) {
+    if (p.loadout.hasBombs) {
+      const detDef = getItemDef("detonator");
+      tryPlaceBomb(p, bombs, map, detDef.fuseTime);
+    } else {
+      spawnFloatingText(effects, p.x, p.y - 24, "Нужен детонатор", 1.5);
+    }
   }
 
   updateMobs(mobs, players, projectiles, dt, effects);
@@ -220,17 +262,17 @@ function updatePlaying(dt) {
   }
   roundState.projectiles = projectiles.filter((pr) => pr.alive);
 
-  const bombDef = getItemDef("bomb");
+  const detDef = getItemDef("detonator");
   roundState.bombs = updateBombs(
     bombs, map, mobs, players, effects,
-    bombDef?.blastRange || 5,
-    bombDef?.damage || 40,
+    detDef?.blastRange || 5,
+    detDef?.damage || 40,
     dt,
     onMobKilled,
   );
 
   updateEffects(effects, dt);
-  updateCameras(camera, players, dt, viewW, viewH);
+  updateFog(roundState.fogState, p, map);
   checkRoundEnd();
 }
 
@@ -309,6 +351,10 @@ function draw() {
     return;
   }
 
+  const p = roundState.players[0];
+  input.getPlayer(0).refresh({ x: p.x, y: p.y }, camera);
+  const zoomActive = match.phase === "playing" && input.getPlayer(0).isZoomActive();
+
   drawWorld(
     ctx,
     roundState.map,
@@ -317,10 +363,12 @@ function draw() {
     roundState.projectiles,
     roundState.bombs,
     roundState.effects,
+    roundState.fogState,
     camera,
     camera.pixelRatio,
     viewW,
     viewH,
+    zoomActive,
   );
 }
 

@@ -215,8 +215,9 @@ function mobTakeDamage(mob, amount, attacker, effects) {
   return false;
 }
 
-function drawMob(ctx, mob) {
+function drawMob(ctx, mob, fogMap) {
   if (!mob.alive) return;
+  if (fogMap && !isWorldVisible(fogMap, mob.x, mob.y)) return;
   const sleeping = mob.type === "berserker" && mob.state === "sleep";
 
   ctx.fillStyle = sleeping ? "#555" : "#884444";

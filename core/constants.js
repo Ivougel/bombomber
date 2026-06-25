@@ -10,10 +10,12 @@ const MAP_CENTER_Y = WORLD_H * 0.5;
 const TILE = {
   VOID: 0,
   FLOOR: 1,
-  WALL: 2,
+  WALL_HARD: 2,
   COLUMN: 3,
   EXIT: 4,
+  WALL_SOFT: 5,
 };
+TILE.WALL = TILE.WALL_HARD;
 
 const BIOME = {
   MINE: "mine",

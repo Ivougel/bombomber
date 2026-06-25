@@ -40,6 +40,7 @@ function generateMap(seed) {
   }
 
   finalizeWalls(tiles, biomes, rng);
+  softenCorridorWalls(tiles, rng);
 
   const rooms = leaves.map((l) => l.room).filter(Boolean);
   const p1Room = pickRoomInQuarter(rooms, 0, 0.25, rng);
@@ -52,6 +53,11 @@ function generateMap(seed) {
     tiles[ecy * MAP_W + ecx] = TILE.EXIT;
   }
 
+  const reserved = new Set();
+  if (p1Room) reserved.add(`${p1Room.cx},${p1Room.cy}`);
+  if (exitRoom) reserved.add(`${exitRoom.cx},${exitRoom.cy}`);
+  scatterRoomObstacles(rooms, tiles, biomes, rng, reserved);
+
   return {
     seed,
     tiles,
@@ -61,6 +67,7 @@ function generateMap(seed) {
     spawnP2: roomCenter(p2Room),
     exitPos: exitRoom ? roomCenter(exitRoom) : { x: WORLD_W * 0.5, y: WORLD_H * 0.5 },
     mobRooms,
+    fogMap: createFogMap(),
   };
 }
 
@@ -186,6 +193,40 @@ function carveV(tiles, y1, y2, x) {
       if (col >= 0 && col < MAP_W && row >= 0 && row < MAP_H) {
         tiles[row * MAP_W + col] = TILE.FLOOR;
       }
+    }
+  }
+}
+
+function softenCorridorWalls(tiles, rng) {
+  const candidates = [];
+  for (let row = 1; row < MAP_H - 1; row++) {
+    for (let col = 1; col < MAP_W - 1; col++) {
+      const i = row * MAP_W + col;
+      if (tiles[i] === TILE.WALL_HARD) candidates.push(i);
+    }
+  }
+  for (const i of candidates) {
+    if (rng.chance(0.25)) tiles[i] = TILE.WALL_SOFT;
+  }
+}
+
+function scatterRoomObstacles(rooms, tiles, biomes, rng, reserved) {
+  const reservedSet = reserved || new Set();
+  for (const room of rooms) {
+    if (!room || room.w * room.h < 36) continue;
+    const count = rng.int(2, 6);
+    const floorCells = [];
+    for (let row = room.y; row < room.y + room.h; row++) {
+      for (let col = room.x; col < room.x + room.w; col++) {
+        if (reservedSet.has(`${col},${row}`)) continue;
+        const i = row * MAP_W + col;
+        if (tiles[i] === TILE.FLOOR) floorCells.push(i);
+      }
+    }
+    for (let n = 0; n < count && floorCells.length > 0; n++) {
+      const pickIdx = rng.int(0, floorCells.length - 1);
+      const i = floorCells.splice(pickIdx, 1)[0];
+      tiles[i] = rng.chance(0.25) ? TILE.WALL_SOFT : TILE.WALL_HARD;
     }
   }
 }

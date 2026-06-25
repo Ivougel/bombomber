@@ -3,7 +3,7 @@
 const ITEM_SLOT = {
   PASSIVE: "passive",
   WEAPON: "weapon",
-  BOMB: "bomb",
+  DETONATOR: "detonator",
 };
 
 const SHOP_CATALOG = {
@@ -30,22 +30,20 @@ const SHOP_CATALOG = {
     radius: 6,
     desc: "Стрельба по прицелу · Space · КД 1с",
   },
-  bomb: {
-    id: "bomb",
-    name: "Бомба",
+  detonator: {
+    id: "detonator",
+    name: "Детонатор",
     emoji: "💣",
-    slot: ITEM_SLOT.BOMB,
+    slot: ITEM_SLOT.DETONATOR,
     price: 8,
-    stackable: true,
-    maxStack: 5,
     fuseTime: 2.2,
     blastRange: 5,
     damage: 40,
-    desc: "Крест 5 клеток · B — установить",
+    desc: "Бесконечные бомбы · B — установить",
   },
 };
 
-const SHOP_ITEM_ORDER = ["aura_ring", "blaster", "bomb"];
+const SHOP_ITEM_ORDER = ["aura_ring", "blaster", "detonator"];
 
 const START_GOLD = 40;
 const MAX_DAMAGE_PER_HIT = 22;
@@ -57,13 +55,13 @@ function getItemDef(itemId) {
 }
 
 function createEmptyLoadout() {
-  return { passive: null, weapon: null, bombs: 0 };
+  return { passive: null, weapon: null, hasBombs: false };
 }
 
 function copyLoadout(loadout) {
   return {
     passive: loadout.passive,
     weapon: loadout.weapon,
-    bombs: loadout.bombs || 0,
+    hasBombs: !!loadout.hasBombs,
   };
 }

@@ -78,7 +78,8 @@ function updateProjectile(proj, dt, players, mobs, effects, onMobKilled) {
   }
 }
 
-function drawProjectile(ctx, proj) {
+function drawProjectile(ctx, proj, fogMap) {
+  if (fogMap && !isWorldVisible(fogMap, proj.x, proj.y)) return;
   if (proj.fromMob) {
     ctx.fillStyle = "#ffdd44";
   } else {
