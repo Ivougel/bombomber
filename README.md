@@ -32,7 +32,7 @@ npm start
 | Часть | Платформа | URL |
 |-------|-----------|-----|
 | Клиент | GitHub Pages | `https://ivougel.github.io/bombomber/` |
-| Сервер | Туннель с Mac | `https://bombomber-ivougel.loca.lt` |
+| Сервер | Туннель с Mac | см. `tunnel-url.txt` после `./scripts/start-network.sh` |
 
 **Запуск сервера + туннеля (хост):**
 ```bash

@@ -1,7 +1,10 @@
 /** Клиентский WebSocket слой (socket.io) */
 
 const SERVER_URL_KEY = "bombomber_server_url";
-const DEFAULT_PROD_SERVER = "https://bombomber-ivougel.loca.lt";
+const DEFAULT_PROD_SERVER = "https://tender-elephant-13.loca.lt";
+const DEPRECATED_SERVERS = new Set([
+  "https://bombomber-ivougel.loca.lt",
+]);
 
 function resolveServerUrl() {
   if (typeof window === "undefined") return "";
@@ -17,7 +20,11 @@ function resolveServerUrl() {
 
   try {
     const stored = localStorage.getItem(SERVER_URL_KEY);
-    if (stored) return stored.replace(/\/$/, "");
+    if (stored) {
+      const normalized = stored.replace(/\/$/, "");
+      if (!DEPRECATED_SERVERS.has(normalized)) return normalized;
+      localStorage.removeItem(SERVER_URL_KEY);
+    }
   } catch (_) {}
 
   const { hostname } = window.location;
@@ -125,7 +132,7 @@ function createNetwork() {
     socket.once("connect", cb);
     socket.once("connect_error", (err) => {
       const hint = SERVER_URL.includes("loca.lt")
-        ? " Хост должен запустить сервер и туннель (scripts/start-network.sh)."
+        ? ` Сервер: ${SERVER_URL}. Хост: ./scripts/start-network.sh. Если не помогло — откройте с ?server=URL или localStorage.removeItem('bombomber_server_url')`
         : "";
       errorHandlers.forEach((fn) => fn({
         message: (err?.message || "Не удалось подключиться к серверу") + hint,
