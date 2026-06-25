@@ -71,6 +71,15 @@ function loadGameCore() {
     vm.runInContext(code, sandbox, { filename: filePath });
   }
 
+  for (const key of ["START_GOLD", "ITEM_SLOT", "ROUND_DURATION", "MAP_W", "MAP_H"]) {
+    try {
+      sandbox[key] = vm.runInContext(key, sandbox);
+    } catch {
+      /* optional */
+    }
+  }
+  if (sandbox.START_GOLD == null) sandbox.START_GOLD = 40;
+
   cached = sandbox;
   return sandbox;
 }

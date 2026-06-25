@@ -30,7 +30,7 @@ function createNetwork() {
 
   function connect() {
     if (socket || typeof io === "undefined") return;
-    socket = io(SERVER_URL, { transports: ["websocket", "polling"] });
+    socket = io(SERVER_URL, { transports: ["websocket", "polling"], autoConnect: true });
 
     socket.on("connect", () => {
       connected = true;
@@ -58,14 +58,23 @@ function createNetwork() {
     });
     socket.on("room:player_left", (payload) => {
       lobby = payload.players || [];
-      phase = "waiting";
+      phase = lobby.length >= 2 ? "pregame" : "waiting";
+      joinHandlers.forEach((cb) => cb({
+        code: roomCode,
+        slot,
+        isHost: host,
+        seed,
+        phase,
+        players: lobby,
+      }));
     });
     socket.on("game:state", (state) => {
       prevState = latestState;
       latestState = state;
       stateTime = performance.now();
       if (state.lobby) lobby = state.lobby;
-      if (state.phase) phase = state.phase;
+      if (state.seed) seed = state.seed;
+    if (state.phase) phase = state.phase;
       stateHandlers.forEach((cb) => cb(state, prevState));
     });
     socket.on("game:event", (ev) => {
@@ -82,14 +91,28 @@ function createNetwork() {
     });
   }
 
-  function createRoom() {
+  function whenConnected(cb) {
     connect();
-    socket.emit("room:create");
+    if (!socket) {
+      errorHandlers.forEach((fn) => fn({ message: "Сеть недоступна (socket.io не загрузился)" }));
+      return;
+    }
+    if (connected) {
+      cb();
+      return;
+    }
+    socket.once("connect", cb);
+    socket.once("connect_error", (err) => {
+      errorHandlers.forEach((fn) => fn({ message: err?.message || "Не удалось подключиться к серверу" }));
+    });
+  }
+
+  function createRoom() {
+    whenConnected(() => socket.emit("room:create"));
   }
 
   function joinRoom(code) {
-    connect();
-    socket.emit("room:join", code);
+    whenConnected(() => socket.emit("room:join", code));
   }
 
   function sendInput(input) {
@@ -200,14 +223,21 @@ function createNetwork() {
     };
   }
 
-  function disconnect() {
-    socket?.disconnect();
+  function leaveRoom() {
+    if (socket?.connected) socket.disconnect();
     socket = null;
     connected = false;
     roomCode = null;
+    slot = 0;
+    host = false;
     phase = "offline";
+    lobby = [];
     latestState = null;
     prevState = null;
+  }
+
+  function disconnect() {
+    leaveRoom();
   }
 
   return {
@@ -236,6 +266,7 @@ function createNetwork() {
     getLobby,
     getLatestState,
     interpolateRemotePlayer,
+    leaveRoom,
     disconnect,
   };
 }

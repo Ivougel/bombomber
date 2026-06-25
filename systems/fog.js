@@ -47,7 +47,11 @@ function isWorldVisible(fogMap, worldX, worldY) {
 }
 
 function revealFogAround(fogMap, centerCol, centerRow) {
-  let revealedNew = false;
+  return revealFogAroundPatches(fogMap, centerCol, centerRow).length > 0;
+}
+
+function revealFogAroundPatches(fogMap, centerCol, centerRow) {
+  const patches = [];
   const r = FOG_RADIUS;
   const minRow = Math.max(0, centerRow - r);
   const maxRow = Math.min(MAP_H - 1, centerRow + r);
@@ -62,11 +66,35 @@ function revealFogAround(fogMap, centerCol, centerRow) {
       if (dx * dx + dy * dy > FOG_RADIUS_SQ) continue;
       if (rowData[col] === FOG.UNSEEN) {
         rowData[col] = FOG.VISIBLE;
-        revealedNew = true;
+        patches.push({ col, row });
       }
     }
   }
-  return revealedNew;
+  return patches;
+}
+
+function updateFogWithPatches(fogState, visionSources) {
+  const patches = [];
+  for (const source of visionSources || []) {
+    if (!source?.alive) continue;
+    const col = Math.floor(source.x / TILE_SIZE);
+    const row = Math.floor(source.y / TILE_SIZE);
+    patches.push(...revealFogAroundPatches(fogState.map, col, row));
+  }
+  if (patches.length) fogState.dirty = true;
+  return patches;
+}
+
+function applyFogPatches(fogMap, patches) {
+  let changed = false;
+  for (const patch of patches || []) {
+    const row = patch.row;
+    const col = patch.col;
+    if (!fogMap[row] || fogMap[row][col] === FOG.VISIBLE) continue;
+    fogMap[row][col] = FOG.VISIBLE;
+    changed = true;
+  }
+  return changed;
 }
 
 /** Источники обзора: игроки и боты (не простые мобы). */

@@ -8,6 +8,8 @@ function createMenuNav() {
   const NAV_COOLDOWN = 0.16;
 
   window.addEventListener("keydown", (e) => {
+    const tag = document.activeElement?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter"].includes(e.code)) return;
     e.preventDefault();
     menuKeys.add(e.code);
@@ -143,7 +145,7 @@ function createMenuNav() {
       lastNavAt = now;
     }
 
-    if (pad.confirm || menuKeys.has("Enter")) activateFocused();
+    if (pad.confirm || (menuKeys.has("Enter") && document.activeElement?.tagName !== "INPUT")) activateFocused();
     if (pad.back) {
       if (match?.phase === "matchEnd") {
         document.getElementById("btn-new-game")?.click();

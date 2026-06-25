@@ -232,7 +232,10 @@ function updateHud(dom, match, roundState) {
   const { timerEl, scoreEl, roundEl, seedEl, phaseEl, hpEl } = dom;
   if (timerEl) timerEl.textContent = formatTime(roundState.timeLeft);
   if (roundEl) roundEl.textContent = `Раунд ${match.round} / ${MAX_ROUNDS}`;
-  if (seedEl && roundState.map) seedEl.textContent = `Seed: ${roundState.map.seed}`;
+  if (seedEl && roundState.map) {
+    const seedLabel = roundState.networkMode ? `Seed: ${roundState.map.seed} · Сеть` : `Seed: ${roundState.map.seed}`;
+    seedEl.textContent = seedLabel;
+  }
   if (phaseEl) phaseEl.textContent = phaseLabel(match.phase);
 
   if (scoreEl) {
@@ -406,7 +409,7 @@ function renderClassSelect(match) {
         <button type="button" class="btn menu-focusable" id="btn-create-room">Создать комнату</button>
         <div class="join-row">
           <input type="text" id="join-room-code" class="join-code-input menu-focusable" maxlength="6" placeholder="ABC123" autocomplete="off" />
-          <button type="button" class="btn menu-focusable" id="btn-join-room">Войти по коду</button>
+          <button type="button" class="btn menu-focusable" id="btn-join-room">Присоединиться</button>
         </div>
       </div>
       <p class="network-hint" id="network-status"></p>
@@ -414,11 +417,124 @@ function renderClassSelect(match) {
   `;
 }
 
-function renderNetworkWaiting(code, message) {
-  const codeEl = document.getElementById("room-code-display");
-  const msgEl = document.getElementById("network-wait-msg");
-  if (codeEl) codeEl.textContent = code || "------";
-  if (msgEl) msgEl.textContent = message || "Ждём второго игрока...";
+function renderNetworkClassSelect(match, opts = {}) {
+  const el = document.getElementById("class-select-content");
+  if (!el) return;
+
+  const mySlot = opts.mySlot ?? 0;
+  const lobby = opts.lobby || [];
+  const myClass = classPick || match?.players?.[mySlot]?.class || "miner";
+  const code = opts.code || "------";
+  const opponentSlot = mySlot === 0 ? 1 : 0;
+  const opponent = lobby.find((p) => p.slot === opponentSlot);
+  const opponentClass = opponent?.class === "scout" ? "Разведчик" : opponent?.class === "miner" ? "Шахтёр" : "—";
+
+  el.innerHTML = `
+    <p class="network-pregame-code">Комната <strong>${code}</strong> · Сетевой забег 1v1</p>
+    <h3 class="network-pregame-title">Выберите класс</h3>
+    <p class="network-pregame-opponent">Соперник: ${opponent?.name || `Игрок ${opponentSlot + 1}`} · класс: ${opponentClass}</p>
+
+    <div class="class-cards solo">
+      <div class="class-card menu-focusable ${myClass === "miner" ? "selected" : ""}" data-class="miner">
+        <span class="class-emoji">⛏️</span>
+        <strong>Шахтёр</strong>
+        <span>Ближний бой · выносливость</span>
+      </div>
+      <div class="class-card menu-focusable ${myClass === "scout" ? "selected" : ""}" data-class="scout">
+        <span class="class-emoji">🏹</span>
+        <strong>Разведчик</strong>
+        <span>Мобильность · дальний урон</span>
+      </div>
+    </div>
+    <p class="class-hint">Стрелки / геймпад — навигация · Enter — выбор</p>
+    <button type="button" class="btn menu-focusable" id="btn-to-shop" ${myClass ? "" : "disabled"}>В магазин →</button>
+    <button type="button" class="btn btn-secondary menu-focusable" id="btn-back-to-lobby">← Назад в лобби</button>
+  `;
+}
+
+function renderNetworkWaiting(code, message, opts = {}) {
+  renderNetworkLobby({
+    code,
+    lobby: opts.lobby || [],
+    mySlot: opts.mySlot ?? 0,
+    isHost: opts.isHost ?? false,
+    phase: opts.phase || "waiting",
+    statusMessage: message,
+    errorMessage: opts.errorMessage || "",
+  });
+}
+
+function renderNetworkLobby({
+  code,
+  lobby = [],
+  mySlot = 0,
+  isHost = false,
+  phase = "waiting",
+  statusMessage = "",
+  errorMessage = "",
+}) {
+  const el = document.getElementById("network-lobby-content");
+  if (!el) return;
+
+  const slots = [0, 1].map((slot) => {
+    const player = lobby.find((p) => p.slot === slot);
+    const isMe = slot === mySlot;
+    if (player) {
+      const role = slot === 0 ? "Хост" : "Гость";
+      return `<li class="network-player-item network-player-item--online ${isMe ? "network-player-item--me" : ""}">
+        <span class="network-player-status">🟢</span>
+        <span class="network-player-name">${player.name || `Игрок ${slot + 1}`}</span>
+        <span class="network-player-role">${isMe ? "Вы" : role}</span>
+      </li>`;
+    }
+    return `<li class="network-player-item network-player-item--empty">
+      <span class="network-player-status">⚪</span>
+      <span class="network-player-name">Игрок ${slot + 1}</span>
+      <span class="network-player-role">ожидание…</span>
+    </li>`;
+  }).join("");
+
+  const playersReady = lobby.length >= 2;
+  const canStart = playersReady && (phase === "pregame" || phase === "waiting");
+
+  el.innerHTML = `
+    <h2>🌐 Сетевая комната</h2>
+    <p class="room-code-label">Код комнаты — отправьте другу</p>
+    <div class="room-code-row">
+      <div class="room-code-display" id="room-code-display">${code || "------"}</div>
+      <button type="button" class="btn btn-secondary btn-copy-code menu-focusable" id="btn-copy-room-code" ${code && code !== "..." && code !== "------" ? "" : "disabled"}>📋 Копировать</button>
+    </div>
+    <ul class="network-player-list">${slots}</ul>
+    <p class="network-wait-msg" id="network-wait-msg">${statusMessage || (playersReady
+      ? "Оба игрока в комнате — можно начинать забег"
+      : "Ждём второго игрока…")}</p>
+    ${errorMessage ? `<p class="network-error">${errorMessage}</p>` : ""}
+    <div class="network-lobby-actions">
+      ${canStart
+        ? `<button type="button" class="btn menu-focusable" id="btn-network-start-run">Начать забег →</button>`
+        : `<button type="button" class="btn menu-focusable" id="btn-network-start-run" disabled>Начать забег →</button>`}
+      <button type="button" class="btn btn-secondary menu-focusable" id="btn-network-leave">Покинуть комнату</button>
+    </div>
+  `;
+}
+
+async function copyRoomCode(code) {
+  const text = String(code || "").trim();
+  if (!text || text === "..." || text === "------") return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  }
 }
 
 function renderNetworkShopFooter(lobby, mySlot) {

@@ -78,6 +78,9 @@ function startRoundOnRoom(room) {
     room.entities.push(entity);
   }
 
+  room.fogState = G.createFogState(map.fogMap);
+  room.fogPatches = G.updateFogWithPatches(room.fogState, room.entities);
+
   G.mobIdCounter = 0;
 }
 
@@ -152,6 +155,9 @@ function simTick(room, dt) {
   room.timeLeft -= dt;
   room.tick++;
 
+  const fogPatches = G.updateFogWithPatches(room.fogState, players);
+  if (fogPatches.length) room.fogPatches.push(...fogPatches);
+
   if (room.timeLeft <= 0) {
     room.phase = "round_end";
     events.push({ type: "round_end", timeLeft: 0 });
@@ -210,6 +216,7 @@ function serializeGameState(room) {
     projectiles,
     bombs,
     tilePatches: room.tilePatches || [],
+    fogPatches: room.fogPatches || [],
     lobby: serializeLobby(room),
   };
 }

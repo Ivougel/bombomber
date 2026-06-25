@@ -78,16 +78,45 @@ function initNetwork() {
       network.createRoom();
       showOverlay("class-overlay", false);
       showOverlay("network-wait-overlay", true);
-      renderNetworkWaiting("...", "Создаём комнату...");
+      renderNetworkWaiting("...", "Подключаемся к серверу…", { phase: "waiting" });
       return;
     }
     if (e.target.id === "btn-join-room") {
       const code = document.getElementById("join-room-code")?.value?.trim();
-      if (!code) return;
+      if (!code) {
+        const status = document.getElementById("network-status");
+        if (status) status.textContent = "Введите код комнаты";
+        return;
+      }
       network.joinRoom(code);
       showOverlay("class-overlay", false);
       showOverlay("network-wait-overlay", true);
-      renderNetworkWaiting(code.toUpperCase(), "Подключаемся...");
+      renderNetworkWaiting(code.toUpperCase(), "Подключаемся…", { phase: "waiting" });
+    }
+  });
+
+  document.getElementById("network-wait-overlay")?.addEventListener("click", async (e) => {
+    if (e.target.id === "btn-copy-room-code") {
+      const code = document.getElementById("room-code-display")?.textContent?.trim();
+      const ok = await copyRoomCode(code);
+      const btn = e.target;
+      if (ok) {
+        btn.textContent = "✓ Скопировано";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.textContent = "📋 Копировать";
+          btn.classList.remove("copied");
+        }, 1800);
+      }
+      return;
+    }
+    if (e.target.id === "btn-network-start-run") {
+      if ((network.getLobby() || []).length < 2) return;
+      enterNetworkPregame();
+      return;
+    }
+    if (e.target.id === "btn-network-leave") {
+      leaveNetworkRoom();
     }
   });
 
@@ -96,21 +125,17 @@ function initNetwork() {
   });
 
   network.onJoined((payload) => {
-    renderNetworkWaiting(payload.code, payload.players?.length >= 2
-      ? "Оба игрока в комнате!"
-      : "Ждём второго игрока...");
+    renderNetworkLobbyView(payload, payload.players?.length >= 2
+      ? "Оба игрока в комнате — можно начинать забег"
+      : "Ждём второго игрока…");
+    showOverlay("network-wait-overlay", true);
+    showOverlay("class-overlay", false);
   });
 
   network.onRoomReady((payload) => {
-    networkMode = true;
-    match = createGameState(MATCH_MODE.SOLO);
-    match.matchMode = MATCH_MODE.SOLO;
-    match.players = [createPlayerState(0, "miner"), createPlayerState(1, "scout")];
-    syncLobbyToMatch(network.getLobby());
-    showOverlay("network-wait-overlay", false);
-    showOverlay("class-overlay", true);
-    classPick = match.players[network.getSlot()].class;
-    renderClassSelect(match);
+    renderNetworkLobbyView(payload, "Оба игрока в комнате — можно начинать забег");
+    showOverlay("network-wait-overlay", true);
+    showOverlay("class-overlay", false);
     menuNav?.reset();
   });
 
@@ -118,7 +143,14 @@ function initNetwork() {
     serverStateAlpha = 0;
     if (state.lobby) {
       syncLobbyToMatch(state.lobby);
-      if (networkMode && match.phase === "shop") {
+      if (networkMode && match.phase === "classSelect") {
+        renderNetworkClassSelect(match, {
+          mySlot: network.getSlot(),
+          lobby: state.lobby,
+          code: network.getRoomCode(),
+        });
+        menuNav?.reset();
+      } else if (networkMode && match.phase === "shop") {
         renderNetworkShopFooter(state.lobby, network.getSlot());
         renderShopOverlay(match.players[network.getSlot()], {
           title: "🛒 Магазин · Сеть",
@@ -127,6 +159,13 @@ function initNetwork() {
         });
         menuNav?.reset();
       }
+    }
+    if (networkMode && state.phase === "playing" && state.players?.length && !roundState) {
+      startNetworkRound({
+        seed: state.seed,
+        round: state.round,
+        timeLeft: state.timeLeft,
+      });
     }
     if (state.players && roundState?.networkMode) {
       applyServerGameState(state);
@@ -145,10 +184,74 @@ function initNetwork() {
   });
 
   network.onError((err) => {
+    const msg = err?.message || "Ошибка сети";
     const el = document.getElementById("network-status");
-    if (el) el.textContent = err?.message || "Ошибка сети";
-    renderNetworkWaiting("—", err?.message || "Ошибка");
+    if (el) el.textContent = msg;
+    renderNetworkWaiting(network.getRoomCode() || "—", msg, {
+      lobby: network.getLobby(),
+      mySlot: network.getSlot(),
+      isHost: network.isHost(),
+      phase: network.getPhase(),
+      errorMessage: msg,
+    });
+    showOverlay("network-wait-overlay", true);
+    showOverlay("class-overlay", false);
   });
+}
+
+function renderNetworkLobbyView(payload, message) {
+  renderNetworkWaiting(payload?.code || network.getRoomCode(), message, {
+    lobby: payload?.players || network.getLobby(),
+    mySlot: network.getSlot(),
+    isHost: network.isHost(),
+    phase: payload?.phase || network.getPhase(),
+  });
+}
+
+function enterNetworkPregame() {
+  networkMode = true;
+  match = createGameState(MATCH_MODE.SOLO);
+  match.matchMode = MATCH_MODE.SOLO;
+  match.players = [createPlayerState(0, "miner"), createPlayerState(1, "scout")];
+  for (const p of match.players) {
+    p.gold = START_GOLD;
+    p.loadout = createEmptyLoadout();
+  }
+  syncLobbyToMatch(network.getLobby());
+  match.phase = "classSelect";
+  const mySlot = network.getSlot();
+  classPick = match.players[mySlot].class;
+  showOverlay("network-wait-overlay", false);
+  showOverlay("class-overlay", true);
+  renderNetworkClassSelect(match, {
+    mySlot,
+    lobby: network.getLobby(),
+    code: network.getRoomCode(),
+  });
+  menuNav?.reset();
+}
+
+function returnToNetworkLobby() {
+  renderNetworkLobbyView({
+    code: network.getRoomCode(),
+    players: network.getLobby(),
+    phase: network.getPhase(),
+  }, "Оба игрока в комнате — можно начинать забег");
+  showOverlay("class-overlay", false);
+  showOverlay("network-wait-overlay", true);
+  menuNav?.reset();
+}
+
+function leaveNetworkRoom() {
+  network.leaveRoom();
+  networkMode = false;
+  showOverlay("network-wait-overlay", false);
+  showOverlay("class-overlay", true);
+  match.phase = "classSelect";
+  renderClassSelect(match);
+  const status = document.getElementById("network-status");
+  if (status) status.textContent = "";
+  menuNav?.reset();
 }
 
 function syncLobbyToMatch(lobby) {
@@ -156,7 +259,7 @@ function syncLobbyToMatch(lobby) {
     const p = match.players[lp.slot];
     if (!p) continue;
     p.class = lp.class;
-    p.gold = lp.gold;
+    p.gold = lp.gold ?? START_GOLD;
     p.loadout = copyLoadout(lp.loadout || createEmptyLoadout());
     p.ready = lp.ready;
   }
@@ -177,7 +280,9 @@ function openNetworkShop() {
 }
 
 function startNetworkRound(payload) {
-  const seed = payload.seed ?? network.getSeed();
+  const seed = payload?.seed ?? network.getSeed();
+  if (!seed) return;
+
   const map = generateMap(seed);
   setCollisionMap(map);
   syncLobbyToMatch(network.getLobby());
@@ -199,7 +304,7 @@ function startNetworkRound(payload) {
     bombs: [],
     effects: createEffectsState(),
     fogState: createFogState(map.fogMap),
-    timeLeft: payload.timeLeft ?? ROUND_DURATION,
+    timeLeft: payload?.timeLeft ?? ROUND_DURATION,
     resultsTimer: 0,
     intermissionTimer: 0,
     roundWon: false,
@@ -211,28 +316,65 @@ function startNetworkRound(payload) {
   };
 
   match.phase = "playing";
-  match.round = payload.round ?? 1;
+  match.round = payload?.round ?? 1;
   showOverlay("shop-overlay", false);
   showOverlay("results-overlay", false);
   showOverlay("intermission-overlay", false);
   input.getPlayer(0).resetZoom();
   mobIdCounter = 0;
 
-  updateFog(roundState.fogState, collectVisionSources(players, []));
-  markFogDirty(roundState.fogState);
-
   const state = network.getLatestState();
   if (state) applyServerGameState(state);
+}
+
+function ensureNetworkMap(state) {
+  if (!roundState || !state?.seed) return false;
+  if (roundState.map?.seed === state.seed) return false;
+
+  const map = generateMap(state.seed);
+  setCollisionMap(map);
+  roundState.map = map;
+  roundState.fogState = createFogState(map.fogMap);
+  markFogDirty(roundState.fogState);
+  return true;
+}
+
+function syncNetworkPlayerFromServer(slot, serverPlayer) {
+  if (!roundState || !serverPlayer) return;
+  let ent = roundState.players[slot];
+  if (!ent) {
+    const spawn = slot === 0 ? roundState.map.spawnP1 : roundState.map.spawnP2;
+    ent = createPlayerEntity(match.players[slot], spawn.x, spawn.y);
+    roundState.players[slot] = ent;
+  }
+  ent.x = serverPlayer.x;
+  ent.y = serverPlayer.y;
+  ent.spawnX = serverPlayer.x;
+  ent.spawnY = serverPlayer.y;
+  ent.hp = serverPlayer.hp;
+  ent.maxHp = serverPlayer.maxHp;
+  ent.alive = serverPlayer.alive;
+  ent.invuln = serverPlayer.invuln || 0;
+  ent.respawnTimer = serverPlayer.respawnTimer || 0;
+  ent.aimDir = { ...(serverPlayer.aimDir || { x: 1, y: 0 }) };
+  ent.loadout = serverPlayer.loadout || copyLoadout(match.players[slot].loadout);
+  ent.color = serverPlayer.color || PLAYER_COLORS[slot];
 }
 
 function applyServerGameState(state) {
   if (!roundState) return;
 
+  ensureNetworkMap(state);
   roundState.timeLeft = state.timeLeft ?? roundState.timeLeft;
 
   const mySlot = roundState.mySlot ?? network.getSlot();
-  const local = roundState.players[mySlot];
   const serverMe = state.players?.find((p) => p.id === mySlot);
+  const remoteSlot = mySlot === 0 ? 1 : 0;
+  const serverRemote = state.players?.find((p) => p.id === remoteSlot);
+
+  if (serverRemote) syncNetworkPlayerFromServer(remoteSlot, serverRemote);
+
+  const local = roundState.players[mySlot];
   if (local && serverMe) {
     const dx = serverMe.x - local.x;
     const dy = serverMe.y - local.y;
@@ -240,41 +382,16 @@ function applyServerGameState(state) {
       local.x = serverMe.x;
       local.y = serverMe.y;
     } else {
-      local.x += dx * 0.4;
-      local.y += dy * 0.4;
+      local.x += dx * 0.35;
+      local.y += dy * 0.35;
     }
     local.hp = serverMe.hp;
     local.maxHp = serverMe.maxHp;
     local.alive = serverMe.alive;
-    local.invuln = serverMe.invuln;
+    local.invuln = serverMe.invuln || 0;
     local.respawnTimer = serverMe.respawnTimer || 0;
-    local.aimDir = { ...serverMe.aimDir };
-    local.loadout = serverMe.loadout;
-  }
-
-  const remoteSlot = mySlot === 0 ? 1 : 0;
-  let remote = roundState.players[remoteSlot];
-  const serverRemote = state.players?.find((p) => p.id === remoteSlot);
-  if (serverRemote) {
-    if (!remote) {
-      const spawn = remoteSlot === 0 ? roundState.map.spawnP1 : roundState.map.spawnP2;
-      remote = createPlayerEntity(match.players[remoteSlot], spawn.x, spawn.y);
-      roundState.players[remoteSlot] = remote;
-    }
-    const alpha = serverStateAlpha;
-    const prev = network.getLatestState() && network.interpolateRemotePlayer(0);
-    remote.x = serverRemote.x;
-    remote.y = serverRemote.y;
-    if (prev && alpha < 1) {
-      remote.x = prev.x + (serverRemote.x - prev.x) * alpha;
-      remote.y = prev.y + (serverRemote.y - prev.y) * alpha;
-    }
-    remote.hp = serverRemote.hp;
-    remote.maxHp = serverRemote.maxHp;
-    remote.alive = serverRemote.alive;
-    remote.aimDir = { ...serverRemote.aimDir };
-    remote.loadout = serverRemote.loadout;
-    remote.color = serverRemote.color || PLAYER_COLORS[remoteSlot];
+    local.aimDir = { ...(serverMe.aimDir || local.aimDir) };
+    local.loadout = serverMe.loadout || local.loadout;
   }
 
   roundState.mobs = (state.mobs || []).map((m) => ({ ...m, radius: m.radius || 14 }));
@@ -286,8 +403,9 @@ function applyServerGameState(state) {
     roundState.map.tiles[i] = patch.tile;
   }
 
-  updateFog(roundState.fogState, collectVisionSources(roundState.players, []));
-  markFogDirty(roundState.fogState);
+  if (applyFogPatches(roundState.fogState.map, state.fogPatches)) {
+    markFogDirty(roundState.fogState);
+  }
 }
 
 function bindClassSelect() {
@@ -323,6 +441,10 @@ function bindClassSelect() {
     if (e.target.id === "btn-to-shop") {
       if (networkMode) openNetworkShop();
       else openPregameShop();
+      return;
+    }
+    if (e.target.id === "btn-back-to-lobby") {
+      returnToNetworkLobby();
     }
   });
 }
@@ -614,7 +736,6 @@ function updatePlayingNetwork(dt) {
   updatePlayerEntity(p, dt, fakeInput, camera);
 
   updateEffects(effects, dt);
-  updateFog(roundState.fogState, collectVisionSources(players, []));
 }
 
 function collectDrop(player, mob) {

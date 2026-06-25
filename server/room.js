@@ -4,6 +4,7 @@ const { loadGameCore } = require("./load-core");
 const { startRoundOnRoom, serializeGameState } = require("./simulation");
 
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const NET_START_GOLD = 40;
 
 function randomCode() {
   let s = "";
@@ -29,6 +30,8 @@ class Room {
     this.map = null;
     this.tick = 0;
     this.tilePatches = [];
+    this.fogPatches = [];
+    this.fogState = null;
     this.effects = null;
   }
 
@@ -52,7 +55,7 @@ class Room {
       name: name || `Player ${slot + 1}`,
       class: slot === 0 ? "miner" : "scout",
       ready: false,
-      gold: G.START_GOLD,
+      gold: NET_START_GOLD,
       loadout: G.createEmptyLoadout(),
       pendingInput: null,
       state: null,
@@ -105,6 +108,13 @@ class RoomManager {
     return id ? this.rooms.get(id) : null;
   }
 
+  emitRoomJoined(room) {
+    for (const socketId of room.players.keys()) {
+      const peer = this.io.sockets.sockets.get(socketId);
+      if (peer) peer.emit("room:joined", room.toJoinedPayload(socketId));
+    }
+  }
+
   createRoom(socket) {
     if (this.socketToRoom.has(socket.id)) return;
     let code;
@@ -140,9 +150,15 @@ class RoomManager {
     this.socketToRoom.set(socket.id, roomId);
     socket.join(roomId);
 
-    this.io.to(roomId).emit("room:joined", room.toJoinedPayload(socket.id));
+    this.emitRoomJoined(room);
     if (room.isFull()) {
       room.phase = "pregame";
+      const G = loadGameCore();
+      for (const p of room.players.values()) {
+        p.gold = NET_START_GOLD;
+        p.loadout = G.createEmptyLoadout();
+        p.ready = false;
+      }
       this.io.to(roomId).emit("room:ready", {
         code: roomId,
         seed: room.seed,
@@ -195,7 +211,7 @@ class RoomManager {
     const def = G.getItemDef(itemId);
     if (!def || pl.gold < def.price) return;
 
-    if (def.slot === G.ITEM_SLOT.DETONATOR) {
+    if (def.slot === "detonator") {
       if (pl.loadout.hasBombs) return;
       pl.gold -= def.price;
       pl.loadout.hasBombs = true;
@@ -229,6 +245,7 @@ class RoomManager {
       timeLeft: room.timeLeft,
     });
     this.io.to(room.id).emit("game:state", serializeGameState(room));
+    room.fogPatches = [];
   }
 
   broadcastLobby(room) {
@@ -253,7 +270,7 @@ class RoomManager {
     } else {
       room.phase = "waiting";
       room.resetReady();
-      this.io.to(code).emit("room:player_left", { players: serializeGameState(room).lobby });
+      this.emitRoomJoined(room);
     }
   }
 
@@ -263,6 +280,7 @@ class RoomManager {
       const { simTick } = require("./simulation");
       const events = simTick(room, dt);
       this.io.to(room.id).emit("game:state", serializeGameState(room));
+      room.fogPatches = [];
       for (const ev of events) {
         this.io.to(room.id).emit("game:event", ev);
         if (ev.type === "round_end") {
