@@ -20,8 +20,6 @@ function createFogState(fogMap) {
   return {
     map: fogMap,
     dirty: true,
-    lastPlayerCol: -1,
-    lastPlayerRow: -1,
     canvas: null,
     ctx: null,
   };
@@ -48,24 +46,19 @@ function isWorldVisible(fogMap, worldX, worldY) {
   return isTileVisible(fogMap, Math.floor(worldX / TILE_SIZE), Math.floor(worldY / TILE_SIZE));
 }
 
-function updateFog(fogState, player, map) {
-  const fogMap = fogState.map;
-  const pc = Math.floor(player.x / TILE_SIZE);
-  const pr = Math.floor(player.y / TILE_SIZE);
-  const tileChanged = pc !== fogState.lastPlayerCol || pr !== fogState.lastPlayerRow;
-
+function revealFogAround(fogMap, centerCol, centerRow) {
   let revealedNew = false;
   const r = FOG_RADIUS;
-  const minRow = Math.max(0, pr - r);
-  const maxRow = Math.min(MAP_H - 1, pr + r);
-  const minCol = Math.max(0, pc - r);
-  const maxCol = Math.min(MAP_W - 1, pc + r);
+  const minRow = Math.max(0, centerRow - r);
+  const maxRow = Math.min(MAP_H - 1, centerRow + r);
+  const minCol = Math.max(0, centerCol - r);
+  const maxCol = Math.min(MAP_W - 1, centerCol + r);
 
   for (let row = minRow; row <= maxRow; row++) {
-    const dy = row - pr;
+    const dy = row - centerRow;
     const rowData = fogMap[row];
     for (let col = minCol; col <= maxCol; col++) {
-      const dx = col - pc;
+      const dx = col - centerCol;
       if (dx * dx + dy * dy > FOG_RADIUS_SQ) continue;
       if (rowData[col] === FOG.UNSEEN) {
         rowData[col] = FOG.VISIBLE;
@@ -73,11 +66,32 @@ function updateFog(fogState, player, map) {
       }
     }
   }
+  return revealedNew;
+}
 
-  if (tileChanged) {
-    fogState.lastPlayerCol = pc;
-    fogState.lastPlayerRow = pr;
+/** Источники обзора: игроки и боты (не простые мобы). */
+function collectVisionSources(players, bots) {
+  const sources = [];
+  for (const p of players || []) {
+    if (p.alive) sources.push(p);
   }
+  for (const bot of bots || []) {
+    if (bot.alive) sources.push(bot);
+  }
+  return sources;
+}
+
+function updateFog(fogState, visionSources) {
+  const fogMap = fogState.map;
+  let revealedNew = false;
+
+  for (const source of visionSources || []) {
+    if (!source?.alive) continue;
+    const col = Math.floor(source.x / TILE_SIZE);
+    const row = Math.floor(source.y / TILE_SIZE);
+    if (revealFogAround(fogMap, col, row)) revealedNew = true;
+  }
+
   if (revealedNew) fogState.dirty = true;
 }
 

@@ -205,7 +205,7 @@ function startRound() {
   mobIdCounter = 0;
   resetBotIdCounter();
 
-  updateFog(roundState.fogState, players[0], map);
+  updateFog(roundState.fogState, collectVisionSources(players, bots));
   markFogDirty(roundState.fogState);
 }
 
@@ -326,7 +326,7 @@ function updatePlaying(dt) {
   );
 
   updateEffects(effects, dt);
-  updateFog(roundState.fogState, p, map);
+  updateFog(roundState.fogState, collectVisionSources(players, bots));
   checkRoundEnd();
 }
 
