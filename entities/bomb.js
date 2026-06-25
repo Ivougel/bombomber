@@ -51,7 +51,7 @@ function tryPlaceBomb(player, bombs, map, fuseTime) {
   return true;
 }
 
-function updateBombs(bombs, map, mobs, players, effects, blastRange, blastDamage, dt, onMobKilled) {
+function updateBombs(bombs, map, mobs, players, bots, effects, blastRange, blastDamage, dt, onMobKilled, onBotKilled) {
   for (const bomb of bombs) {
     if (!bomb.alive) continue;
     bomb.fuse -= dt;
@@ -86,6 +86,15 @@ function updateBombs(bombs, map, mobs, players, effects, blastRange, blastDamage
         const pr = Math.floor(pl.y / TILE_SIZE);
         if (pc === tile.col && pr === tile.row) {
           playerTakeDamage(pl, blastDamage * 0.5, effects, wx, wy);
+        }
+      }
+
+      for (const bot of bots || []) {
+        if (!bot.alive || bot === bomb.owner) continue;
+        const bc = Math.floor(bot.x / TILE_SIZE);
+        const br = Math.floor(bot.y / TILE_SIZE);
+        if (bc === tile.col && br === tile.row) {
+          botTakeDamage(bot, blastDamage * 0.5, bomb.owner, effects);
         }
       }
     }

@@ -20,7 +20,7 @@ function renderShopOverlay(player, options = {}) {
       : player.gold >= def.price && (!loadout[def.slot] || loadout[def.slot] !== id);
 
     return `
-      <div class="shop-item-card ${owned ? "owned" : ""}" data-buy="${id}">
+      <div class="shop-item-card menu-focusable ${owned ? "owned" : ""}" data-buy="${id}">
         <div class="shop-item-head">
           <span class="shop-item-emoji">${def.emoji}</span>
           <strong>${def.name}</strong>
@@ -28,7 +28,7 @@ function renderShopOverlay(player, options = {}) {
         <p class="shop-item-desc">${def.desc}</p>
         <div class="shop-item-foot">
           <span class="shop-price">💰 ${def.price}</span>
-          <button type="button" class="btn-shop-buy" data-buy="${id}" ${canBuy ? "" : "disabled"}>
+          <button type="button" class="btn-shop-buy menu-focusable" data-buy="${id}" ${canBuy ? "" : "disabled"}>
             ${id === "detonator" && loadout.hasBombs ? "Куплено" : "Купить"}
           </button>
         </div>
@@ -60,7 +60,7 @@ function renderShopOverlay(player, options = {}) {
 
     <div class="shop-grid">${itemCards}</div>
 
-    ${showStart ? `<button type="button" class="btn" id="btn-shop-start">${startLabel}</button>` : ""}
+    ${showStart ? `<button type="button" class="btn menu-focusable" id="btn-shop-start">${startLabel}</button>` : ""}
   `;
 }
 

@@ -83,7 +83,7 @@ function playerTakeDamage(p, amount, effects, sourceX, sourceY) {
   return dmg;
 }
 
-function updatePlayerAura(p, mobs, dt, effects, onMobKilled) {
+function updatePlayerAura(p, mobs, dt, effects, onMobKilled, bots, onBotKilled) {
   p.auraActive = false;
   if (!p.alive || !p.loadout.passive) return;
 
@@ -102,6 +102,14 @@ function updatePlayerAura(p, mobs, dt, effects, onMobKilled) {
     if (dist(p.x, p.y, mob.x, mob.y) <= def.auraRadius + mob.radius) {
       const killed = mobTakeDamage(mob, def.auraDamage, p, effects);
       if (killed && onMobKilled) onMobKilled(p, mob);
+    }
+  }
+
+  for (const bot of bots || []) {
+    if (!bot.alive) continue;
+    if (dist(p.x, p.y, bot.x, bot.y) <= def.auraRadius + bot.radius) {
+      const killed = botTakeDamage(bot, def.auraDamage, p, effects);
+      if (killed && onBotKilled) onBotKilled(p, bot);
     }
   }
 }

@@ -259,6 +259,44 @@ html, body {
   margin-bottom: 16px;
 }
 
+.mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.mode-card {
+  background: #242833;
+  border: 2px solid #3a4050;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.mode-card:hover {
+  background: #2a3040;
+}
+
+.mode-card.selected {
+  border-color: #e85d7a;
+  background: #2e2430;
+}
+
+.gamepad-focus,
+.class-card.gamepad-focus,
+.mode-card.gamepad-focus,
+.shop-item-card.gamepad-focus,
+.btn.gamepad-focus {
+  outline: 2px solid #ffd56a;
+  box-shadow: 0 0 0 3px rgba(255, 213, 106, 0.28);
+  border-color: #ffd56a !important;
+}
+
 .class-card {
   background: #242833;
   border: 2px solid #3a4050;

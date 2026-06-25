@@ -5,6 +5,11 @@ const GAME_MODE = {
   VERSUS: "versus",
 };
 
+const MATCH_MODE = {
+  SOLO: "solo",
+  VS_BOTS: "vs_bots",
+};
+
 /** Активный режим — переключить на VERSUS когда добавим сплит */
 const ACTIVE_GAME_MODE = GAME_MODE.SOLO;
 
@@ -55,6 +60,15 @@ function getActiveLayout(profile) {
 
 function isSoloMode() {
   return ACTIVE_GAME_MODE === GAME_MODE.SOLO;
+}
+
+function isVsBotsMode(match) {
+  return match?.matchMode === MATCH_MODE.VS_BOTS;
+}
+
+function getMatchModeLabel(matchMode) {
+  if (matchMode === MATCH_MODE.VS_BOTS) return "Против ботов";
+  return "Solo забег";
 }
 
 function getActivePlayerCount() {

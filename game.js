@@ -15,10 +15,13 @@ const hud = {};
 let viewW = 0;
 let viewH = 0;
 
+let menuNav = null;
+
 function init() {
   canvas = document.getElementById("game-canvas");
   ctx = canvas.getContext("2d");
   input = createInputSystem();
+  menuNav = createMenuNav();
 
   hud.timerEl = document.getElementById("hud-timer");
   hud.scoreEl = document.getElementById("hud-score");
@@ -33,10 +36,11 @@ function init() {
   window.visualViewport?.addEventListener("resize", resize);
   window.visualViewport?.addEventListener("scroll", resize);
 
-  renderClassSelect();
+  renderClassSelect(match);
   bindClassSelect();
   bindShopEvents(onShopBuy, onShopStart);
   bindMatchEndButtons();
+  menuNav.reset();
 
   match.phase = "classSelect";
   showOverlay("class-overlay", true);
@@ -64,7 +68,19 @@ function resize() {
 }
 
 function bindClassSelect() {
-  document.getElementById("class-select-content")?.addEventListener("click", (e) => {
+  const root = document.getElementById("class-select-content");
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = "1";
+  root.addEventListener("click", (e) => {
+    const modeCard = e.target.closest(".mode-card");
+    if (modeCard?.dataset.mode) {
+      match.matchMode = modeCard.dataset.mode;
+      document.querySelectorAll(".mode-card").forEach((c) => {
+        c.classList.toggle("selected", c.dataset.mode === match.matchMode);
+      });
+      menuNav?.refresh();
+      return;
+    }
     const card = e.target.closest(".class-card");
     if (card?.dataset.class) {
       classPick = card.dataset.class;
@@ -74,6 +90,7 @@ function bindClassSelect() {
       });
       const btn = document.getElementById("btn-to-shop");
       if (btn) btn.disabled = !classPick;
+      menuNav?.refresh();
       return;
     }
     if (e.target.id === "btn-to-shop") openPregameShop();
@@ -84,15 +101,21 @@ function openPregameShop() {
   shopContext = "pregame";
   match.phase = "shop";
   showOverlay("class-overlay", false);
-  openShopOverlay(match.players[0], { title: "🛒 Магазин перед забегом", startLabel: "В бой!" });
+  const modeLabel = getMatchModeLabel(match.matchMode);
+  openShopOverlay(match.players[0], {
+    title: `🛒 Магазин · ${modeLabel}`,
+    startLabel: "В бой!",
+  });
+  menuNav?.reset();
 }
 
 function onShopBuy(itemId) {
   const player = match.players[0];
   if (tryBuyItem(player, itemId)) {
     renderShopOverlay(player, shopContext === "pregame"
-      ? { title: "🛒 Магазин перед забегом", startLabel: "В бой!" }
+      ? { title: `🛒 Магазин · ${getMatchModeLabel(match.matchMode)}`, startLabel: "В бой!" }
       : { title: "🛒 Магазин между раундами", startLabel: "Продолжить" });
+    menuNav?.reset();
   }
 }
 
@@ -125,20 +148,21 @@ function startMatch() {
 }
 
 function rematch() {
-  match = createGameState();
+  const prevMode = match.matchMode;
+  match = createGameState(prevMode);
   if (classPick) match.players[0].class = classPick;
   showOverlay("match-end-overlay", false);
   openPregameShop();
 }
 
 function newGame() {
-  match = createGameState();
+  match = createGameState(MATCH_MODE.SOLO);
   classPick = null;
   showOverlay("match-end-overlay", false);
-  renderClassSelect();
-  bindClassSelect();
+  renderClassSelect(match);
   match.phase = "classSelect";
   showOverlay("class-overlay", true);
+  menuNav?.reset();
 }
 
 function startRound() {
@@ -153,12 +177,14 @@ function startRound() {
   recalcCamera(camera, viewW, viewH, WORLD_W, WORLD_H);
 
   const rng = createRng(seed);
-  const mobs = spawnMobs(map, getRoundBudget(match.round), rng);
+  const mobs = spawnMobs(map, getRoundBudget(match.round, match.matchMode), rng);
+  const bots = isVsBotsMode(match) ? spawnBots(map, getBotCount(match.round), rng) : [];
 
   roundState = {
     map,
     players,
     mobs,
+    bots,
     projectiles: [],
     bombs: [],
     effects: createEffectsState(),
@@ -177,6 +203,7 @@ function startRound() {
   showOverlay("intermission-overlay", false);
   input.getPlayer(0).resetZoom();
   mobIdCounter = 0;
+  resetBotIdCounter();
 
   updateFog(roundState.fogState, players[0], map);
   markFogDirty(roundState.fogState);
@@ -191,6 +218,10 @@ function gameLoop(ts) {
 }
 
 function update(dt) {
+  if (match.phase === "classSelect" || match.phase === "shop" || match.phase === "matchEnd") {
+    menuNav?.update();
+  }
+
   if (!roundState) return;
 
   if (match.phase === "playing") {
@@ -228,12 +259,22 @@ function closeInventory() {
   showOverlay("backpack-overlay", false);
 }
 
+function onBotKilled(player, bot) {
+  if (!bot.dropZone?.item || !player) return;
+  const state = match.players[player.id];
+  state.backpack.push(bot.dropZone.item);
+  state.gold += bot.gold || 0;
+  state.itemsCollected++;
+  player.itemsThisRound++;
+  bot.dropZone = null;
+}
+
 function onMobKilled(player, mob) {
   if (mob.dropZone) collectDrop(player, mob);
 }
 
 function updatePlaying(dt) {
-  const { players, mobs, projectiles, bombs, effects, map } = roundState;
+  const { players, mobs, bots, projectiles, bombs, effects, map } = roundState;
 
   const p = players[0];
   const inp = input.getPlayer(0);
@@ -252,7 +293,7 @@ function updatePlaying(dt) {
 
   updatePlayerEntity(p, dt, inp, camera);
 
-  updatePlayerAura(p, mobs, dt, effects, onMobKilled);
+  updatePlayerAura(p, mobs, dt, effects, onMobKilled, bots, onBotKilled);
 
   const fireDir = inp.getFireDir();
   if (inp.consumeShoot()) tryFireWeapon(p, projectiles, fireDir);
@@ -267,19 +308,21 @@ function updatePlaying(dt) {
   }
 
   updateMobs(mobs, players, projectiles, dt, effects);
+  updateBots(bots, players, projectiles, bombs, map, dt, effects, onBotKilled);
 
   for (const proj of projectiles) {
-    updateProjectile(proj, dt, players, mobs, effects, onMobKilled);
+    updateProjectile(proj, dt, players, mobs, bots, effects, onMobKilled, onBotKilled);
   }
   roundState.projectiles = projectiles.filter((pr) => pr.alive);
 
   const detDef = getItemDef("detonator");
   roundState.bombs = updateBombs(
-    bombs, map, mobs, players, effects,
+    bombs, map, mobs, players, bots, effects,
     detDef?.blastRange || 5,
     detDef?.damage || 40,
     dt,
     onMobKilled,
+    onBotKilled,
   );
 
   updateEffects(effects, dt);
@@ -299,6 +342,9 @@ function collectDrop(player, mob) {
 
 function checkRoundEnd() {
   if (roundState.timeLeft <= 0) endRound(true);
+  if (isVsBotsMode(match) && roundState.bots?.length && roundState.bots.every((b) => !b.alive)) {
+    endRound(true);
+  }
 }
 
 function endRound(won) {
@@ -341,6 +387,7 @@ function openIntermissionShop() {
     title: "🛒 Магазин между раундами",
     startLabel: "Следующий раунд →",
   });
+  menuNav?.reset();
 }
 
 function finishMatch(winner) {
@@ -351,6 +398,7 @@ function finishMatch(winner) {
   closeShopOverlay();
   renderMatchEndOverlay(match);
   showOverlay("match-end-overlay", true);
+  menuNav?.reset();
 }
 
 function draw() {
@@ -371,6 +419,7 @@ function draw() {
     roundState.map,
     roundState.players,
     roundState.mobs,
+    roundState.bots,
     roundState.projectiles,
     roundState.bombs,
     roundState.effects,

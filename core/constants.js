@@ -53,6 +53,22 @@ const MOB_BUDGET = [
   { wanderer: 6, archer: 8, berserker: 8 },
 ];
 
+const BOT_COUNT = [1, 2, 2, 3, 4];
+
+function getBotCount(round) {
+  const idx = Math.min(Math.max(round - 1, 0), BOT_COUNT.length - 1);
+  return BOT_COUNT[idx];
+}
+
+function scaleMobBudgetForMode(budget, matchMode) {
+  if (matchMode !== "vs_bots") return budget;
+  return {
+    wanderer: Math.max(2, Math.floor(budget.wanderer * 0.35)),
+    archer: Math.max(1, Math.floor(budget.archer * 0.5)),
+    berserker: Math.max(0, Math.floor(budget.berserker * 0.5)),
+  };
+}
+
 const MOB_DEFS = {
   wanderer: { emoji: "🧟", hp: 40, speed: 90, damage: 5, touchRadius: 22, gold: 2 },
   archer: { emoji: "🏹", hp: 30, speed: 70, damage: 6, touchRadius: 18, gold: 3 },

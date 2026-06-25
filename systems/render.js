@@ -132,7 +132,7 @@ function drawDropZones(ctx, mobs, fogMap) {
   }
 }
 
-function drawWorldScene(ctx, map, players, mobs, projectiles, bombs, effects, fogState, camBounds) {
+function drawWorldScene(ctx, map, players, mobs, bots, projectiles, bombs, effects, fogState, camBounds) {
   const fogMap = fogState?.map ?? null;
 
   drawMap(ctx, map, camBounds, fogMap);
@@ -140,6 +140,12 @@ function drawWorldScene(ctx, map, players, mobs, projectiles, bombs, effects, fo
   drawBombs(ctx, bombs, fogMap);
   for (const mob of mobs) drawMob(ctx, mob, fogMap);
   drawDropZones(ctx, mobs, fogMap);
+  drawBotDropZones(ctx, bots, fogMap);
+
+  for (const bot of bots || []) {
+    const auraDef = bot.loadout?.passive ? getItemDef(bot.loadout.passive) : null;
+    if (bot.alive && auraDef) drawAuraZone(ctx, bot, auraDef, effects);
+  }
 
   for (const p of players) {
     const auraDef = p.loadout?.passive ? getItemDef(p.loadout.passive) : null;
@@ -148,6 +154,10 @@ function drawWorldScene(ctx, map, players, mobs, projectiles, bombs, effects, fo
 
   for (const proj of projectiles) {
     if (proj.alive) drawProjectile(ctx, proj, fogMap);
+  }
+
+  for (const bot of bots || []) {
+    if (bot.alive) drawBot(ctx, bot, fogMap);
   }
 
   for (const p of players) {
@@ -195,8 +205,8 @@ function drawMagnifier(ctx, player, camera, pixelRatio, sceneArgs) {
   ctx.restore();
 }
 
-function drawWorld(ctx, map, players, mobs, projectiles, bombs, effects, fogState, camera, pixelRatio, cssW, cssH, zoomActive) {
-  const sceneArgs = [map, players, mobs, projectiles, bombs, effects, fogState];
+function drawWorld(ctx, map, players, mobs, bots, projectiles, bombs, effects, fogState, camera, pixelRatio, cssW, cssH, zoomActive) {
+  const sceneArgs = [map, players, mobs, bots, projectiles, bombs, effects, fogState];
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#0a0a0c";
@@ -238,14 +248,19 @@ function updateHud(dom, match, roundState) {
     if (p.respawnTimer > 0) {
       hpEl.textContent = `💀 Респавн ${p.respawnTimer.toFixed(1)}с`;
     } else {
-      hpEl.textContent = `❤️ ${Math.ceil(p.hp)} / ${p.maxHp}`;
+      let hpText = `❤️ ${Math.ceil(p.hp)} / ${p.maxHp}`;
+      if (isVsBotsMode(match) && roundState.bots) {
+        const aliveBots = roundState.bots.filter((b) => b.alive).length;
+        hpText += ` · 🤖 ${aliveBots}`;
+      }
+      hpEl.textContent = hpText;
     }
   }
 }
 
 function phaseLabel(phase) {
   const labels = {
-    classSelect: "Выбор класса",
+    classSelect: "Выбор режима",
     shop: "Магазин",
     playing: "Бой",
     results: "Итоги раунда",
@@ -336,50 +351,46 @@ function renderMatchEndOverlay(match) {
       ? `Побед: ${match.roundWins} из ${MAX_ROUNDS}`
       : `Финальный счёт: ${match.scores[0]} : ${match.scores[1]}`}</p>
     <div class="match-end-actions">
-      <button type="button" class="btn" id="btn-rematch">Реванш</button>
-      <button type="button" class="btn btn-secondary" id="btn-new-game">Новая игра</button>
+      <button type="button" class="btn menu-focusable" id="btn-rematch">Реванш</button>
+      <button type="button" class="btn btn-secondary menu-focusable" id="btn-new-game">Новая игра</button>
     </div>
   `;
 }
 
-function renderClassSelect() {
+function renderClassSelect(match) {
   const el = document.getElementById("class-select-content");
   if (!el) return;
 
-  if (isSoloMode()) {
-    el.innerHTML = `
-      <div class="class-cards solo">
-        <div class="class-card" data-class="miner">
-          <span class="class-emoji">⛏️</span>
-          <strong>Шахтёр</strong>
-          <span>Ближний бой · выносливость</span>
-        </div>
-        <div class="class-card" data-class="scout">
-          <span class="class-emoji">🏹</span>
-          <strong>Разведчик</strong>
-          <span>Мобильность · дальний урон</span>
-        </div>
-      </div>
-      <p class="class-hint">WASD — движение · мышь — прицел · Space — оружие · B — бомба · Shift — спринт · Q — лупа вкл/выкл · Tab — рюкзак</p>
-      <button type="button" class="btn" id="btn-to-shop" disabled>В магазин →</button>
-    `;
-    return;
-  }
+  const mode = match?.matchMode || MATCH_MODE.SOLO;
+  const selectedClass = classPick || match?.players?.[0]?.class;
 
   el.innerHTML = `
-    <div class="class-cards">
-      <div class="class-card" data-player="0" data-class="miner">
-        <span class="class-emoji">⛏️</span>
-        <strong>Шахтёр</strong>
-        <span>Игрок 1 · WASD</span>
+    <div class="mode-cards">
+      <div class="mode-card menu-focusable ${mode === MATCH_MODE.SOLO ? "selected" : ""}" data-mode="solo">
+        <span class="class-emoji">🗺️</span>
+        <strong>Solo забег</strong>
+        <span>Обычные мобы · магазин · 5 раундов</span>
       </div>
-      <div class="class-card" data-player="1" data-class="scout">
-        <span class="class-emoji">🏹</span>
-        <strong>Разведчик</strong>
-        <span>Игрок 2 · Стрелки</span>
+      <div class="mode-card menu-focusable ${mode === MATCH_MODE.VS_BOTS ? "selected" : ""}" data-mode="vs_bots">
+        <span class="class-emoji">🤖</span>
+        <strong>Против ботов</strong>
+        <span>Боты с аурой, бластером и бомбами</span>
       </div>
     </div>
-    <p class="class-hint">Выберите класс для каждого игрока</p>
-    <button type="button" class="btn" id="btn-start-match" disabled>Начать матч</button>
+
+    <div class="class-cards solo">
+      <div class="class-card menu-focusable ${match?.players?.[0]?.class === "miner" ? "selected" : ""}" data-class="miner">
+        <span class="class-emoji">⛏️</span>
+        <strong>Шахтёр</strong>
+        <span>Ближний бой · выносливость</span>
+      </div>
+      <div class="class-card menu-focusable ${match?.players?.[0]?.class === "scout" ? "selected" : ""}" data-class="scout">
+        <span class="class-emoji">🏹</span>
+        <strong>Разведчик</strong>
+        <span>Мобильность · дальний урон</span>
+      </div>
+    </div>
+    <p class="class-hint">Стрелки / геймпад — навигация · A / Enter — выбор · WASD в бою · Q — лупа · Tab — рюкзак</p>
+    <button type="button" class="btn menu-focusable" id="btn-to-shop" ${selectedClass ? "" : "disabled"}>В магазин →</button>
   `;
 }

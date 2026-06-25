@@ -1,8 +1,9 @@
 /** Состояние матча — solo: 1 игрок, versus: 2 (будущее) */
 
-function createGameState() {
+function createGameState(matchMode = MATCH_MODE.SOLO) {
   const count = getActivePlayerCount();
   return {
+    matchMode,
     round: 1,
     roundWins: 0,
     roundLosses: 0,
@@ -37,7 +38,7 @@ function resetPlayerHp(state) {
   }
 }
 
-function getRoundBudget(round) {
+function getRoundBudget(round, matchMode = MATCH_MODE.SOLO) {
   const idx = Math.min(Math.max(round - 1, 0), MOB_BUDGET.length - 1);
-  return MOB_BUDGET[idx];
+  return scaleMobBudgetForMode(MOB_BUDGET[idx], matchMode);
 }

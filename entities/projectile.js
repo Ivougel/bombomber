@@ -1,4 +1,4 @@
-/** Снаряды: мобы и оружие игрока */
+/** Снаряды: мобы, игрок и боты */
 
 function createProjectile(x, y, dirX, dirY, ownerId) {
   const n = normalizeDir(dirX, dirY);
@@ -32,7 +32,11 @@ function createPlayerProjectile(x, y, dirX, dirY, ownerId, weaponDef) {
   };
 }
 
-function updateProjectile(proj, dt, players, mobs, effects, onMobKilled) {
+function isBotOwner(ownerId, bots) {
+  return (bots || []).some((b) => b.id === ownerId);
+}
+
+function updateProjectile(proj, dt, players, mobs, bots, effects, onMobKilled, onBotKilled) {
   if (!proj.alive) return;
   proj.life -= dt;
   if (proj.life <= 0) {
@@ -54,6 +58,20 @@ function updateProjectile(proj, dt, players, mobs, effects, onMobKilled) {
     return;
   }
 
+  const ownerIsBot = isBotOwner(proj.ownerId, bots);
+
+  if (ownerIsBot) {
+    for (const pl of players) {
+      if (!pl.alive || pl.isBot || pl.invuln > 0) continue;
+      if (distSq(proj.x, proj.y, pl.x, pl.y) < (proj.radius + pl.radius) ** 2) {
+        playerTakeDamage(pl, proj.damage, effects, proj.x, proj.y);
+        proj.alive = false;
+        return;
+      }
+    }
+    return;
+  }
+
   if (proj.fromMob) {
     for (const pl of players) {
       if (!pl.alive || pl.invuln > 0) continue;
@@ -66,10 +84,21 @@ function updateProjectile(proj, dt, players, mobs, effects, onMobKilled) {
     return;
   }
 
+  const attacker = players.find((pl) => pl.id === proj.ownerId);
+
+  for (const bot of bots || []) {
+    if (!bot.alive) continue;
+    if (distSq(proj.x, proj.y, bot.x, bot.y) < (proj.radius + bot.radius) ** 2) {
+      const killed = botTakeDamage(bot, proj.damage, attacker, effects);
+      proj.alive = false;
+      if (killed && onBotKilled) onBotKilled(attacker, bot);
+      return;
+    }
+  }
+
   for (const mob of mobs) {
     if (!mob.alive) continue;
     if (distSq(proj.x, proj.y, mob.x, mob.y) < (proj.radius + mob.radius) ** 2) {
-      const attacker = players.find((pl) => pl.id === proj.ownerId);
       const killed = mobTakeDamage(mob, proj.damage, attacker, effects);
       proj.alive = false;
       if (killed && onMobKilled) onMobKilled(attacker, mob);
