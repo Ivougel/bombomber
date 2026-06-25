@@ -16,7 +16,9 @@ function recalcCamera(camera, viewW, viewH, mapPixelW, mapPixelH) {
   camera.mapPixelW = mapPixelW ?? WORLD_W;
   camera.mapPixelH = mapPixelH ?? WORLD_H;
 
-  camera.scale = Math.min(viewW / camera.mapPixelW, viewH / camera.mapPixelH);
+  const scaleX = viewW / camera.mapPixelW;
+  const scaleY = viewH / camera.mapPixelH;
+  camera.scale = Math.max(scaleX, scaleY);
   camera.offsetX = (viewW - camera.mapPixelW * camera.scale) / 2;
   camera.offsetY = (viewH - camera.mapPixelH * camera.scale) / 2;
 }
@@ -27,6 +29,15 @@ function applyWorldTransform(ctx, camera, pixelRatio) {
   return { camX: 0, camY: 0, worldW: camera.mapPixelW, worldH: camera.mapPixelH };
 }
 
+function viewportClientPoint(screenX, screenY) {
+  const vv = window.visualViewport;
+  if (!vv) return { x: screenX, y: screenY };
+  return {
+    x: screenX - vv.offsetLeft,
+    y: screenY - vv.offsetTop,
+  };
+}
+
 function worldToScreen(camera, worldX, worldY) {
   return {
     x: worldX * camera.scale + camera.offsetX,
@@ -35,8 +46,9 @@ function worldToScreen(camera, worldX, worldY) {
 }
 
 function screenToWorld(camera, screenX, screenY) {
+  const pt = viewportClientPoint(screenX, screenY);
   return {
-    x: (screenX - camera.offsetX) / camera.scale,
-    y: (screenY - camera.offsetY) / camera.scale,
+    x: (pt.x - camera.offsetX) / camera.scale,
+    y: (pt.y - camera.offsetY) / camera.scale,
   };
 }

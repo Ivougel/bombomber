@@ -30,6 +30,8 @@ function init() {
 
   resize();
   window.addEventListener("resize", resize);
+  window.visualViewport?.addEventListener("resize", resize);
+  window.visualViewport?.addEventListener("scroll", resize);
 
   renderClassSelect();
   bindClassSelect();
@@ -41,15 +43,24 @@ function init() {
   requestAnimationFrame(gameLoop);
 }
 
+function getViewportSize() {
+  const vv = window.visualViewport;
+  return {
+    w: Math.round(vv?.width ?? window.innerWidth),
+    h: Math.round(vv?.height ?? window.innerHeight),
+  };
+}
+
 function resize() {
-  viewW = window.innerWidth;
-  viewH = window.innerHeight;
+  const { w, h } = getViewportSize();
+  viewW = w;
+  viewH = h;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.floor(viewW * dpr);
-  canvas.height = Math.floor(viewH * dpr);
-  canvas.style.width = `${viewW}px`;
-  canvas.style.height = `${viewH}px`;
-  recalcCamera(camera, viewW, viewH, WORLD_W, WORLD_H);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  recalcCamera(camera, w, h, WORLD_W, WORLD_H);
 }
 
 function bindClassSelect() {

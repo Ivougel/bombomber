@@ -7,22 +7,35 @@
 html, body {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  position: fixed;
+  inset: 0;
   background: #0a0a0c;
   color: #e8e8ec;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #app {
-  position: relative;
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 #game-canvas {
   display: block;
+  position: fixed;
+  inset: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   touch-action: none;
 }
 
@@ -35,7 +48,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
   background: linear-gradient(180deg, rgba(0,0,0,0.75) 0%, transparent 100%);
   pointer-events: none;
   font-size: 14px;
