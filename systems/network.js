@@ -1,9 +1,9 @@
 /** Клиентский WebSocket слой (socket.io) */
 
 const SERVER_URL_KEY = "bombomber_server_url";
-const DEFAULT_PROD_SERVER = "https://tender-elephant-13.loca.lt";
+const DEFAULT_PROD_SERVER = "https://bombomber-ivougel.loca.lt";
 const DEPRECATED_SERVERS = new Set([
-  "https://bombomber-ivougel.loca.lt",
+  "https://tender-elephant-13.loca.lt",
 ]);
 
 function resolveServerUrl() {
