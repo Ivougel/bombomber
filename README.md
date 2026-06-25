@@ -32,16 +32,19 @@ npm start
 | Часть | Платформа | URL |
 |-------|-----------|-----|
 | Клиент | GitHub Pages | `https://ivougel.github.io/bombomber/` |
-| Сервер | Railway | укажите в `systems/network.js` → `SERVER_URL` |
+| Сервер | Туннель с Mac | `https://bombomber-ivougel.loca.lt` |
 
-**Railway:**
+**Запуск сервера + туннеля (хост):**
 ```bash
-cd server
-railway init
-railway up
+chmod +x scripts/start-network.sh
+./scripts/start-network.sh
 ```
 
-После деплоя замените `SERVER_URL` в `systems/network.js` на ваш `wss://….railway.app`.
+Пока скрипт работает, клиент на GitHub Pages подключается к туннелю автоматически.
+
+Другой URL туннеля без правки кода:
+- в адресной строке: `?server=https://ваш-туннель.loca.lt`
+- или в консоли Safari: `localStorage.setItem('bombomber_server_url', 'https://…')`
 
 ## Управление
 

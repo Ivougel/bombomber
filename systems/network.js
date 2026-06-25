@@ -1,13 +1,34 @@
 /** Клиентский WebSocket слой (socket.io) */
 
-const SERVER_URL = (() => {
+const SERVER_URL_KEY = "bombomber_server_url";
+const DEFAULT_PROD_SERVER = "https://bombomber-ivougel.loca.lt";
+
+function resolveServerUrl() {
   if (typeof window === "undefined") return "";
-  const { hostname, protocol } = window.location;
+
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get("server");
+  if (fromQuery) {
+    try {
+      localStorage.setItem(SERVER_URL_KEY, fromQuery);
+    } catch (_) {}
+    return fromQuery.replace(/\/$/, "");
+  }
+
+  try {
+    const stored = localStorage.getItem(SERVER_URL_KEY);
+    if (stored) return stored.replace(/\/$/, "");
+  } catch (_) {}
+
+  const { hostname } = window.location;
   if (hostname === "localhost" || hostname === "127.0.0.1") {
     return "http://localhost:3000";
   }
-  return "https://mine-ruins-production.up.railway.app";
-})();
+
+  return DEFAULT_PROD_SERVER;
+}
+
+const SERVER_URL = resolveServerUrl();
 
 function createNetwork() {
   let socket = null;
@@ -103,7 +124,12 @@ function createNetwork() {
     }
     socket.once("connect", cb);
     socket.once("connect_error", (err) => {
-      errorHandlers.forEach((fn) => fn({ message: err?.message || "Не удалось подключиться к серверу" }));
+      const hint = SERVER_URL.includes("loca.lt")
+        ? " Хост должен запустить сервер и туннель (scripts/start-network.sh)."
+        : "";
+      errorHandlers.forEach((fn) => fn({
+        message: (err?.message || "Не удалось подключиться к серверу") + hint,
+      }));
     });
   }
 
