@@ -1,11 +1,23 @@
 /** Коллизия круга с тайловой картой (скользящая) */
 
 function isSolidTile(tile) {
-  return tile === TILE.WALL_HARD || tile === TILE.WALL_SOFT || tile === TILE.COLUMN;
+  return tile === TILE.WALL_HARD
+    || tile === TILE.WALL_HARD_CRACKED
+    || tile === TILE.WALL_SOFT
+    || tile === TILE.COLUMN
+    || tile === TILE.COLUMN_CRACKED;
 }
 
 function isDestructibleWall(tile) {
-  return tile === TILE.WALL_SOFT;
+  return tile === TILE.WALL_SOFT
+    || tile === TILE.WALL_HARD
+    || tile === TILE.WALL_HARD_CRACKED
+    || tile === TILE.COLUMN
+    || tile === TILE.COLUMN_CRACKED;
+}
+
+function isColumnTile(tile) {
+  return tile === TILE.COLUMN || tile === TILE.COLUMN_CRACKED;
 }
 
 function isWalkableTile(tile) {
@@ -25,7 +37,7 @@ function biomeAt(map, col, row) {
 function circleIntersectsTile(px, py, radius, col, row) {
   const tile = tileAt(mapRef, col, row);
   if (!isSolidTile(tile)) return false;
-  const shrink = tile === TILE.COLUMN ? 6 : 0;
+  const shrink = isColumnTile(tile) ? 6 : 0;
   const tx = col * TILE_SIZE + shrink;
   const ty = row * TILE_SIZE + shrink;
   const tw = TILE_SIZE - shrink * 2;
@@ -60,7 +72,7 @@ function resolveCircleMovement(px, py, vx, vy, radius) {
         const tile = tileAt(mapRef, col, row);
         if (!isSolidTile(tile)) continue;
 
-        const shrink = tile === TILE.COLUMN ? 6 : 0;
+        const shrink = isColumnTile(tile) ? 6 : 0;
         const tx = col * TILE_SIZE + shrink;
         const ty = row * TILE_SIZE + shrink;
         const tw = TILE_SIZE - shrink * 2;

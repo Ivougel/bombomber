@@ -7,6 +7,17 @@ function drawWallHard(ctx, x, y) {
   ctx.fillRect(x, y + TILE_SIZE - 4, TILE_SIZE, 4);
 }
 
+function drawWallHardCracked(ctx, x, y) {
+  drawWallHard(ctx, x, y);
+  ctx.strokeStyle = "rgba(255,220,120,0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + 6);
+  ctx.lineTo(x + 20, y + 18);
+  ctx.lineTo(x + 10, y + 28);
+  ctx.stroke();
+}
+
 function drawWallSoft(ctx, x, y) {
   ctx.fillStyle = "#7a6a5a";
   ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
@@ -59,13 +70,23 @@ function drawMap(ctx, map, camBounds, fogMap) {
         }
       } else if (tile === TILE.WALL_HARD || tile === TILE.WALL) {
         drawWallHard(ctx, x, y);
+      } else if (tile === TILE.WALL_HARD_CRACKED) {
+        drawWallHardCracked(ctx, x, y);
       } else if (tile === TILE.WALL_SOFT) {
         drawWallSoft(ctx, x, y);
-      } else if (tile === TILE.COLUMN) {
+      } else if (tile === TILE.COLUMN || tile === TILE.COLUMN_CRACKED) {
         ctx.fillStyle = colors.floor;
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.fillStyle = colors.column;
         ctx.fillRect(x + 8, y + 4, TILE_SIZE - 16, TILE_SIZE - 8);
+        if (tile === TILE.COLUMN_CRACKED) {
+          ctx.strokeStyle = "rgba(255,220,120,0.55)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x + 6, y + 8);
+          ctx.lineTo(x + 24, y + 22);
+          ctx.stroke();
+        }
       }
     }
   }

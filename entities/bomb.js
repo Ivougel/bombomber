@@ -14,6 +14,26 @@ function createBomb(x, y, owner, fuseTime) {
   };
 }
 
+function applyBombWallDamage(map, col, row) {
+  const i = row * MAP_W + col;
+  const tile = map.tiles[i];
+  switch (tile) {
+    case TILE.WALL_SOFT:
+    case TILE.WALL_HARD_CRACKED:
+    case TILE.COLUMN_CRACKED:
+      map.tiles[i] = TILE.FLOOR;
+      return true;
+    case TILE.WALL_HARD:
+      map.tiles[i] = TILE.WALL_HARD_CRACKED;
+      return true;
+    case TILE.COLUMN:
+      map.tiles[i] = TILE.COLUMN_CRACKED;
+      return true;
+    default:
+      return false;
+  }
+}
+
 function getBombBlastTiles(map, col, row, range) {
   const tiles = [{ col, row }];
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -24,8 +44,15 @@ function getBombBlastTiles(map, col, row, range) {
       const r = row + dr * i;
       const tile = tileAt(map, c, r);
       if (tile === TILE.VOID) break;
-      if (tile === TILE.WALL_HARD) break;
-      if (tile === TILE.COLUMN) {
+      if (tile === TILE.WALL_SOFT) {
+        tiles.push({ col: c, row: r });
+        break;
+      }
+      if (tile === TILE.WALL_HARD || tile === TILE.WALL_HARD_CRACKED) {
+        tiles.push({ col: c, row: r });
+        break;
+      }
+      if (tile === TILE.COLUMN || tile === TILE.COLUMN_CRACKED) {
         tiles.push({ col: c, row: r });
         break;
       }
@@ -62,10 +89,7 @@ function updateBombs(bombs, map, mobs, players, bots, effects, blastRange, blast
     spawnExplosion(effects, tiles, blastDamage, bomb.owner);
 
     for (const tile of tiles) {
-      const i = tile.row * MAP_W + tile.col;
-      if (map.tiles[i] === TILE.WALL_SOFT) {
-        map.tiles[i] = TILE.FLOOR;
-      }
+      applyBombWallDamage(map, tile.col, tile.row);
 
       const wx = (tile.col + 0.5) * TILE_SIZE;
       const wy = (tile.row + 0.5) * TILE_SIZE;
