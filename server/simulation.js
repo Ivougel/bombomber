@@ -97,8 +97,25 @@ function simTick(room, dt) {
   const effects = room.effects;
 
   for (const pl of room.players.values()) {
-    if (!pl.entity || !pl.pendingInput) continue;
-    applyInputToPlayer(G, pl.entity, pl.pendingInput, dt, map, projectiles, bombs, mobs, effects);
+    if (!pl.entity) continue;
+    const inp = pl.pendingInput;
+    if (!inp && !pl.queuedShoot && !pl.queuedBomb) continue;
+
+    if (inp?.moveDir) pl.lastMoveDir = { ...inp.moveDir };
+    if (inp?.aimDir && (inp.aimDir.x || inp.aimDir.y)) pl.lastAimDir = { ...inp.aimDir };
+    else if (inp?.lastAimDir && (inp.lastAimDir.x || inp.lastAimDir.y)) pl.lastAimDir = { ...inp.lastAimDir };
+
+    const merged = {
+      moveDir: inp?.moveDir || pl.lastMoveDir,
+      aimDir: inp?.aimDir || pl.lastAimDir,
+      lastAimDir: inp?.lastAimDir || pl.lastAimDir,
+      sprint: !!inp?.sprint,
+      shoot: !!(inp?.shoot || pl.queuedShoot),
+      bomb: !!(inp?.bomb || pl.queuedBomb),
+    };
+    applyInputToPlayer(G, pl.entity, merged, dt, map, projectiles, bombs, mobs, effects);
+    if (merged.shoot) pl.queuedShoot = false;
+    if (merged.bomb) pl.queuedBomb = false;
     pl.pendingInput = null;
   }
 

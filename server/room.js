@@ -58,6 +58,10 @@ class Room {
       gold: NET_START_GOLD,
       loadout: G.createEmptyLoadout(),
       pendingInput: null,
+      queuedShoot: false,
+      queuedBomb: false,
+      lastMoveDir: { x: 0, y: 0 },
+      lastAimDir: { x: 1, y: 0 },
       state: null,
       entity: null,
     };
@@ -173,6 +177,8 @@ class RoomManager {
     const pl = room.players.get(socket.id);
     if (!pl) return;
     pl.pendingInput = input;
+    if (input?.shoot) pl.queuedShoot = true;
+    if (input?.bomb) pl.queuedBomb = true;
   }
 
   handleReady(socket) {

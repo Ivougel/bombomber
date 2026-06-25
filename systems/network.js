@@ -233,6 +233,11 @@ function createNetwork() {
     return latestState;
   }
 
+  function getStateAlpha() {
+    if (!latestState) return 1;
+    return Math.min(1, (performance.now() - stateTime) / 50);
+  }
+
   function interpolateRemotePlayer(alpha) {
     if (!latestState?.players) return null;
     const remoteSlot = slot === 0 ? 1 : 0;
@@ -241,7 +246,7 @@ function createNetwork() {
     if (!prevState?.players) return cur;
     const prev = prevState.players.find((p) => p.id === remoteSlot);
     if (!prev) return cur;
-    const t = Math.min(1, alpha);
+    const t = Math.min(1, alpha ?? getStateAlpha());
     return {
       ...cur,
       x: prev.x + (cur.x - prev.x) * t,
@@ -291,6 +296,7 @@ function createNetwork() {
     getPhase,
     getLobby,
     getLatestState,
+    getStateAlpha,
     interpolateRemotePlayer,
     leaveRoom,
     disconnect,

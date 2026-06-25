@@ -18,7 +18,6 @@ let viewH = 0;
 let menuNav = null;
 let network = null;
 let networkMode = false;
-let serverStateAlpha = 0;
 
 function init() {
   canvas = document.getElementById("game-canvas");
@@ -140,7 +139,6 @@ function initNetwork() {
   });
 
   network.onGameState((state) => {
-    serverStateAlpha = 0;
     if (state.lobby) {
       syncLobbyToMatch(state.lobby);
       if (networkMode && match.phase === "classSelect") {
@@ -349,15 +347,13 @@ function syncNetworkPlayerFromServer(slot, serverPlayer) {
   }
   ent.x = serverPlayer.x;
   ent.y = serverPlayer.y;
-  ent.spawnX = serverPlayer.x;
-  ent.spawnY = serverPlayer.y;
   ent.hp = serverPlayer.hp;
   ent.maxHp = serverPlayer.maxHp;
   ent.alive = serverPlayer.alive;
   ent.invuln = serverPlayer.invuln || 0;
   ent.respawnTimer = serverPlayer.respawnTimer || 0;
   ent.aimDir = { ...(serverPlayer.aimDir || { x: 1, y: 0 }) };
-  ent.loadout = serverPlayer.loadout || copyLoadout(match.players[slot].loadout);
+  ent.loadout = copyLoadout(serverPlayer.loadout || match.players[slot].loadout);
   ent.color = serverPlayer.color || PLAYER_COLORS[slot];
 }
 
@@ -365,7 +361,10 @@ function applyServerGameState(state) {
   if (!roundState) return;
 
   ensureNetworkMap(state);
-  roundState.timeLeft = state.timeLeft ?? roundState.timeLeft;
+  if (state.timeLeft != null) {
+    const drift = state.timeLeft - roundState.timeLeft;
+    if (Math.abs(drift) > 0.25) roundState.timeLeft = state.timeLeft;
+  }
 
   const mySlot = roundState.mySlot ?? network.getSlot();
   const serverMe = state.players?.find((p) => p.id === mySlot);
@@ -378,12 +377,9 @@ function applyServerGameState(state) {
   if (local && serverMe) {
     const dx = serverMe.x - local.x;
     const dy = serverMe.y - local.y;
-    if (dx * dx + dy * dy > 50 * 50) {
+    if (dx * dx + dy * dy > 80 * 80) {
       local.x = serverMe.x;
       local.y = serverMe.y;
-    } else {
-      local.x += dx * 0.35;
-      local.y += dy * 0.35;
     }
     local.hp = serverMe.hp;
     local.maxHp = serverMe.maxHp;
@@ -391,7 +387,7 @@ function applyServerGameState(state) {
     local.invuln = serverMe.invuln || 0;
     local.respawnTimer = serverMe.respawnTimer || 0;
     local.aimDir = { ...(serverMe.aimDir || local.aimDir) };
-    local.loadout = serverMe.loadout || local.loadout;
+    local.loadout = copyLoadout(serverMe.loadout || local.loadout);
   }
 
   roundState.mobs = (state.mobs || []).map((m) => ({ ...m, radius: m.radius || 14 }));
@@ -582,10 +578,6 @@ function update(dt) {
     menuNav?.update();
   }
 
-  if (roundState?.networkMode) {
-    serverStateAlpha = Math.min(1, serverStateAlpha + dt * 20);
-  }
-
   if (!roundState) return;
 
   if (match.phase === "playing") {
@@ -723,6 +715,8 @@ function updatePlayingNetwork(dt) {
     return;
   }
 
+  roundState.timeLeft -= dt;
+
   const fakeInput = {
     getMoveDir: () => packet?.moveDir || { x: 0, y: 0 },
     getAimDir: () => packet?.aimDir || p.aimDir,
@@ -823,10 +817,20 @@ function draw() {
   input.getPlayer(0).refresh({ x: p.x, y: p.y }, camera);
   const zoomActive = match.phase === "playing" && input.getPlayer(0).isZoomActive();
 
+  let drawPlayers = roundState.players;
+  if (roundState.networkMode) {
+    const remoteSlot = mySlot === 0 ? 1 : 0;
+    const interp = network.interpolateRemotePlayer(network.getStateAlpha());
+    if (interp && roundState.players[remoteSlot]) {
+      drawPlayers = roundState.players.slice();
+      drawPlayers[remoteSlot] = { ...roundState.players[remoteSlot], x: interp.x, y: interp.y };
+    }
+  }
+
   drawWorld(
     ctx,
     roundState.map,
-    roundState.players,
+    drawPlayers,
     roundState.mobs,
     roundState.bots,
     roundState.projectiles,
