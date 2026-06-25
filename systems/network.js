@@ -235,7 +235,8 @@ function createNetwork() {
 
   function getStateAlpha() {
     if (!latestState) return 1;
-    return Math.min(1, (performance.now() - stateTime) / NETWORK_TICK_MS);
+    const tickMs = typeof NETWORK_TICK_MS !== "undefined" ? NETWORK_TICK_MS : 33;
+    return Math.min(1, (performance.now() - stateTime) / tickMs);
   }
 
   function getExtrapolateSec() {

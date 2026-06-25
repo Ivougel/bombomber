@@ -158,8 +158,8 @@ function initNetwork() {
         menuNav?.reset();
       }
     }
-    if (networkMode && state.phase === "playing" && state.players?.length && !roundState) {
-      startNetworkRound({
+    if (state.phase === "playing" && state.players?.length && !roundState) {
+      enterNetworkRoundFromServer({
         seed: state.seed,
         round: state.round,
         timeLeft: state.timeLeft,
@@ -171,7 +171,7 @@ function initNetwork() {
   });
 
   network.onRoundStart((payload) => {
-    startNetworkRound(payload);
+    enterNetworkRoundFromServer(payload);
   });
 
   network.onRoundEnd(() => {
@@ -263,6 +263,25 @@ function syncLobbyToMatch(lobby) {
   }
 }
 
+function ensureNetworkMatchPlayers() {
+  if (!match.players || match.players.length < 2) {
+    match.players = [
+      createPlayerState(0, "miner"),
+      createPlayerState(1, "scout"),
+    ];
+  }
+  syncLobbyToMatch(network.getLobby());
+}
+
+function enterNetworkRoundFromServer(payload) {
+  networkMode = true;
+  ensureNetworkMatchPlayers();
+  showOverlay("network-wait-overlay", false);
+  showOverlay("class-overlay", false);
+  showOverlay("shop-overlay", false);
+  startNetworkRound(payload);
+}
+
 function openNetworkShop() {
   shopContext = "pregame";
   match.phase = "shop";
@@ -279,14 +298,23 @@ function openNetworkShop() {
 
 function startNetworkRound(payload) {
   const seed = payload?.seed ?? network.getSeed();
-  if (!seed) return;
+  if (seed == null) return;
+
+  if (roundState?.networkMode && roundState.map?.seed === seed && match.phase === "playing") {
+    const state = network.getLatestState();
+    if (state) applyServerGameState(state);
+    return;
+  }
+
+  ensureNetworkMatchPlayers();
 
   const map = generateMap(seed);
   setCollisionMap(map);
   syncLobbyToMatch(network.getLobby());
 
   const mySlot = network.getSlot();
-  const players = match.players.map((statePlayer, i) => {
+  const players = [0, 1].map((i) => {
+    const statePlayer = match.players[i] || createPlayerState(i, i === 0 ? "miner" : "scout");
     const spawn = i === 0 ? map.spawnP1 : map.spawnP2;
     const ent = createPlayerEntity(statePlayer, spawn.x, spawn.y);
     ent.loadout = copyLoadout(statePlayer.loadout);
@@ -317,11 +345,16 @@ function startNetworkRound(payload) {
 
   match.phase = "playing";
   match.round = payload?.round ?? 1;
+  showOverlay("network-wait-overlay", false);
+  showOverlay("class-overlay", false);
   showOverlay("shop-overlay", false);
   showOverlay("results-overlay", false);
   showOverlay("intermission-overlay", false);
   input.getPlayer(0).resetZoom();
   mobIdCounter = 0;
+
+  updateFog(roundState.fogState, collectVisionSources(players, []));
+  markFogDirty(roundState.fogState);
 
   const state = network.getLatestState();
   if (state) applyServerGameState(state);
@@ -341,6 +374,9 @@ function ensureNetworkMap(state) {
 
 function syncNetworkPlayerFromServer(slot, serverPlayer) {
   if (!roundState || !serverPlayer) return;
+  if (!match.players[slot]) {
+    match.players[slot] = createPlayerState(slot, slot === 0 ? "miner" : "scout");
+  }
   let ent = roundState.players[slot];
   if (!ent) {
     const spawn = slot === 0 ? roundState.map.spawnP1 : roundState.map.spawnP2;
@@ -824,6 +860,7 @@ function draw() {
 
   const mySlot = roundState.networkMode ? (roundState.mySlot ?? network.getSlot()) : 0;
   const p = roundState.players[mySlot] || roundState.players[0];
+  if (!p) return;
   input.getPlayer(0).refresh({ x: p.x, y: p.y }, camera);
   const zoomActive = match.phase === "playing" && input.getPlayer(0).isZoomActive();
 
@@ -832,7 +869,7 @@ function draw() {
   let drawProjectiles = roundState.projectiles;
   let drawBombs = roundState.bombs;
 
-  if (roundState.networkMode) {
+  if (roundState.networkMode && typeof buildNetworkRenderEntities === "function") {
     const alpha = network.getStateAlpha();
     const rendered = buildNetworkRenderEntities(
       network.getPrevState(),
@@ -843,9 +880,9 @@ function draw() {
       network.getExtrapolateSec(),
     );
     drawPlayers = rendered.drawPlayers;
-    drawMobs = rendered.drawMobs;
-    drawProjectiles = rendered.drawProjectiles;
-    drawBombs = rendered.drawBombs;
+    drawMobs = rendered.drawMobs.length ? rendered.drawMobs : roundState.mobs;
+    drawProjectiles = rendered.drawProjectiles.length ? rendered.drawProjectiles : roundState.projectiles;
+    drawBombs = rendered.drawBombs.length ? rendered.drawBombs : roundState.bombs;
   }
 
   drawWorld(
