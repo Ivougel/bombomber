@@ -18,6 +18,9 @@ let viewH = 0;
 let menuNav = null;
 let network = null;
 let networkMode = false;
+let hotseatMode = false;
+let hotseatClassStep = 0;
+let hotseatShopSlot = 0;
 
 function init() {
   canvas = document.getElementById("game-canvas");
@@ -121,6 +124,8 @@ function initNetwork() {
 
   document.getElementById("shop-overlay")?.addEventListener("click", (e) => {
     if (e.target.id === "btn-network-ready") network.sendReady();
+    if (e.target.id === "btn-hotseat-ready") onHotseatReady();
+    if (e.target.id === "btn-hotseat-switch") onHotseatShopSwitch();
   });
 
   network.onJoined((payload) => {
@@ -208,6 +213,8 @@ function renderNetworkLobbyView(payload, message) {
 
 function enterNetworkPregame() {
   networkMode = true;
+  hotseatMode = false;
+  setLocalVersusUi(false);
   match = createGameState(MATCH_MODE.SOLO);
   match.matchMode = MATCH_MODE.SOLO;
   match.players = [createPlayerState(0, "miner"), createPlayerState(1, "scout")];
@@ -243,6 +250,8 @@ function returnToNetworkLobby() {
 function leaveNetworkRoom() {
   network.leaveRoom();
   networkMode = false;
+  hotseatMode = false;
+  setLocalVersusUi(false);
   showOverlay("network-wait-overlay", false);
   showOverlay("class-overlay", true);
   match.phase = "classSelect";
@@ -280,6 +289,58 @@ function enterNetworkRoundFromServer(payload) {
   showOverlay("class-overlay", false);
   showOverlay("shop-overlay", false);
   startNetworkRound(payload);
+}
+
+function enterHotseatPregame() {
+  networkMode = false;
+  hotseatMode = true;
+  hotseatClassStep = 0;
+  hotseatShopSlot = 0;
+  setLocalVersusUi(true);
+  match = createGameState(MATCH_MODE.HOTSEAT);
+  match.matchMode = MATCH_MODE.HOTSEAT;
+  match.players = [createPlayerState(0, "miner"), createPlayerState(1, "scout")];
+  match.scores = [0, 0];
+  for (const p of match.players) {
+    p.gold = START_GOLD;
+    p.loadout = createEmptyLoadout();
+    p.ready = false;
+  }
+  classPick = match.players[0].class;
+  match.phase = "classSelect";
+  showOverlay("network-wait-overlay", false);
+  showOverlay("class-overlay", true);
+  menuNav?.setPadIndex(0);
+  renderHotseatClassSelect(match, 0);
+  menuNav?.reset();
+}
+
+function openHotseatShop() {
+  shopContext = "pregame";
+  match.phase = "shop";
+  hotseatShopSlot = 0;
+  for (const p of match.players) p.ready = false;
+  showOverlay("class-overlay", false);
+  openShopOverlay(match.players[0], {
+    title: "🛒 Магазин · Hotseat · Игрок 1",
+    showStart: false,
+  });
+  renderHotseatShopFooter(match, hotseatShopSlot);
+  menuNav?.setPadIndex(0);
+  menuNav?.reset();
+}
+
+function onHotseatShopSwitch() {
+  if (!hotseatMode) return;
+  hotseatShopSlot = hotseatShopSlot === 0 ? 1 : 0;
+  const player = match.players[hotseatShopSlot];
+  renderShopOverlay(player, {
+    title: `🛒 Магазин · Hotseat · Игрок ${hotseatShopSlot + 1}`,
+    showStart: false,
+  });
+  renderHotseatShopFooter(match, hotseatShopSlot);
+  menuNav?.setPadIndex(hotseatShopSlot);
+  menuNav?.reset();
 }
 
 function openNetworkShop() {
@@ -451,6 +512,11 @@ function bindClassSelect() {
   root.addEventListener("click", (e) => {
     const modeCard = e.target.closest(".mode-card");
     if (modeCard?.dataset.mode) {
+      if (modeCard.dataset.mode === MATCH_MODE.HOTSEAT) {
+        enterHotseatPregame();
+        return;
+      }
+      if (hotseatMode) return;
       match.matchMode = modeCard.dataset.mode;
       document.querySelectorAll(".mode-card").forEach((c) => {
         c.classList.toggle("selected", c.dataset.mode === match.matchMode);
@@ -461,6 +527,20 @@ function bindClassSelect() {
     const card = e.target.closest(".class-card");
     if (card?.dataset.class) {
       classPick = card.dataset.class;
+      if (hotseatMode) {
+        const slot = hotseatClassStep;
+        match.players[slot].class = classPick;
+        if (hotseatClassStep === 0) {
+          hotseatClassStep = 1;
+          classPick = match.players[1].class;
+          menuNav?.setPadIndex(1);
+          renderHotseatClassSelect(match, 1);
+          menuNav?.reset();
+          return;
+        }
+        openHotseatShop();
+        return;
+      }
       match.players[0].class = classPick;
       if (networkMode) {
         match.players[network.getSlot()].class = classPick;
@@ -476,7 +556,25 @@ function bindClassSelect() {
     }
     if (e.target.id === "btn-to-shop") {
       if (networkMode) openNetworkShop();
-      else openPregameShop();
+      else if (hotseatMode) {
+        if (hotseatClassStep === 0) {
+          hotseatClassStep = 1;
+          classPick = match.players[1].class;
+          menuNav?.setPadIndex(1);
+          renderHotseatClassSelect(match, 1);
+          menuNav?.reset();
+        } else {
+          openHotseatShop();
+        }
+      } else openPregameShop();
+      return;
+    }
+    if (e.target.id === "btn-back-hotseat-class") {
+      hotseatClassStep = 0;
+      classPick = match.players[0].class;
+      menuNav?.setPadIndex(0);
+      renderHotseatClassSelect(match, 0);
+      menuNav?.reset();
       return;
     }
     if (e.target.id === "btn-back-to-lobby") {
@@ -502,18 +600,45 @@ function onShopBuy(itemId) {
     network.sendShopBuy(itemId);
     return;
   }
-  const player = match.players[0];
+  const player = hotseatMode ? match.players[hotseatShopSlot] : match.players[0];
   if (tryBuyItem(player, itemId)) {
-    renderShopOverlay(player, shopContext === "pregame"
-      ? { title: `🛒 Магазин · ${getMatchModeLabel(match.matchMode)}`, startLabel: "В бой!" }
-      : { title: "🛒 Магазин между раундами", startLabel: "Продолжить" });
+    const title = hotseatMode
+      ? `🛒 Магазин · Hotseat · Игрок ${hotseatShopSlot + 1}`
+      : shopContext === "pregame"
+        ? `🛒 Магазин · ${getMatchModeLabel(match.matchMode)}`
+        : "🛒 Магазин между раундами";
+    renderShopOverlay(player, {
+      title,
+      startLabel: hotseatMode ? "Готов" : shopContext === "pregame" ? "В бой!" : "Продолжить",
+      showStart: !hotseatMode,
+    });
+    if (hotseatMode) renderHotseatShopFooter(match, hotseatShopSlot);
     menuNav?.reset();
+  }
+}
+
+function onHotseatReady() {
+  if (!hotseatMode) return;
+  match.players[hotseatShopSlot].ready = true;
+  renderHotseatShopFooter(match, hotseatShopSlot);
+  if (!match.players.every((p) => p.ready)) return;
+  closeShopOverlay();
+  if (shopContext === "pregame") {
+    startHotseatMatch();
+  } else {
+    showOverlay("intermission-overlay", false);
+    match.round++;
+    startHotseatRound();
   }
 }
 
 function onShopStart() {
   if (networkMode && network.isConnected()) {
     network.sendReady();
+    return;
+  }
+  if (hotseatMode) {
+    onHotseatReady();
     return;
   }
   closeShopOverlay();
@@ -533,6 +658,63 @@ function bindMatchEndButtons() {
   });
 }
 
+function startHotseatMatch() {
+  match.round = 1;
+  match.scores = [0, 0];
+  match.matchOver = false;
+  match.matchWinner = null;
+  startHotseatRound();
+}
+
+function startHotseatRound() {
+  const seed = randomSeed();
+  const map = generateMap(seed);
+  setCollisionMap(map);
+  resetPlayerHp(match);
+
+  const players = [0, 1].map((i) => {
+    const statePlayer = match.players[i];
+    const spawn = i === 0 ? map.spawnP1 : map.spawnP2;
+    return createPlayerEntity(statePlayer, spawn.x, spawn.y);
+  });
+
+  recalcCamera(camera, viewW, viewH, WORLD_W, WORLD_H);
+
+  const rng = createRng(seed);
+  const mobs = spawnMobs(map, getRoundBudget(match.round, MATCH_MODE.SOLO), rng);
+
+  roundState = {
+    map,
+    players,
+    mobs,
+    bots: [],
+    projectiles: [],
+    bombs: [],
+    effects: createEffectsState(),
+    fogState: createFogState(map.fogMap),
+    timeLeft: ROUND_DURATION,
+    resultsTimer: 0,
+    intermissionTimer: 0,
+    roundWon: false,
+    roundWinner: null,
+    stats: match.players.map(() => ({ kills: 0, damage: 0, items: 0 })),
+    inventoryOpen: false,
+    inventoryPlayer: null,
+    paused: false,
+    hotseatMode: true,
+  };
+
+  match.phase = "playing";
+  showOverlay("results-overlay", false);
+  showOverlay("intermission-overlay", false);
+  input.getPlayer(0).resetZoom();
+  input.getPlayer(1).resetZoom();
+  mobIdCounter = 0;
+
+  updateFog(roundState.fogState, collectVisionSources(players, []));
+  markFogDirty(roundState.fogState);
+}
+
 function startMatch() {
   match.round = 1;
   match.roundWins = 0;
@@ -545,13 +727,34 @@ function startMatch() {
 
 function rematch() {
   const prevMode = match.matchMode;
+  const wasHotseat = hotseatMode;
   match = createGameState(prevMode);
-  if (classPick) match.players[0].class = classPick;
+  if (wasHotseat) {
+    hotseatMode = true;
+    setLocalVersusUi(true);
+    match.players = [createPlayerState(0, "miner"), createPlayerState(1, "scout")];
+    match.scores = [0, 0];
+    for (const p of match.players) {
+      p.gold = START_GOLD;
+      p.loadout = createEmptyLoadout();
+      p.ready = false;
+    }
+    hotseatClassStep = 0;
+    hotseatShopSlot = 0;
+    classPick = match.players[0].class;
+  } else if (classPick) {
+    match.players[0].class = classPick;
+  }
   showOverlay("match-end-overlay", false);
-  openPregameShop();
+  if (wasHotseat) openHotseatShop();
+  else openPregameShop();
 }
 
 function newGame() {
+  hotseatMode = false;
+  hotseatClassStep = 0;
+  hotseatShopSlot = 0;
+  setLocalVersusUi(false);
   match = createGameState(MATCH_MODE.SOLO);
   classPick = null;
   showOverlay("match-end-overlay", false);
@@ -636,8 +839,20 @@ function update(dt) {
   if (match.phase === "playing") updateHud(hud, match, roundState);
 }
 
-function toggleInventory() {
+function toggleInventory(slot = 0) {
   if (!roundState) return;
+  if (isHotseatMode(match)) {
+    if (roundState.inventoryOpen && roundState.inventoryPlayer === slot) {
+      closeInventory();
+      return;
+    }
+    roundState.inventoryOpen = true;
+    roundState.inventoryPlayer = slot;
+    roundState.paused = true;
+    renderBackpackOverlay(match.players[slot]);
+    showOverlay("backpack-overlay", true);
+    return;
+  }
   roundState.inventoryOpen = !roundState.inventoryOpen;
   roundState.paused = roundState.inventoryOpen;
   if (roundState.inventoryOpen) {
@@ -651,6 +866,7 @@ function toggleInventory() {
 function closeInventory() {
   if (!roundState?.inventoryOpen) return;
   roundState.inventoryOpen = false;
+  roundState.inventoryPlayer = null;
   roundState.paused = false;
   showOverlay("backpack-overlay", false);
 }
@@ -677,26 +893,21 @@ function updatePlaying(dt) {
   updatePlayingLocal(dt);
 }
 
-function updatePlayingLocal(dt) {
+function updateLocalPlayer(i, dt) {
   const { players, mobs, bots, projectiles, bombs, effects, map } = roundState;
+  const p = players[i];
+  if (!p) return;
 
-  const p = players[0];
-  const inp = input.getPlayer(0);
+  const inp = input.getPlayer(i);
   inp.refresh({ x: p.x, y: p.y }, camera);
 
-  if (inp.consumeBackpack()) toggleInventory();
-  if (inp.consumeCancel() && roundState.inventoryOpen) closeInventory();
-  inp.consumeZoomToggle();
+  if (inp.consumeBackpack()) toggleInventory(i);
+  if (inp.consumeCancel() && roundState.inventoryOpen && roundState.inventoryPlayer === i) closeInventory();
+  if (i === 0) inp.consumeZoomToggle();
 
-  if (roundState.paused) {
-    updateEffects(effects, dt);
-    return;
-  }
-
-  roundState.timeLeft -= dt;
+  if (roundState.paused) return;
 
   updatePlayerEntity(p, dt, inp, camera);
-
   updatePlayerAura(p, mobs, dt, effects, onMobKilled, bots, onBotKilled);
 
   const fireDir = inp.getFireDir();
@@ -710,6 +921,22 @@ function updatePlayingLocal(dt) {
       spawnFloatingText(effects, p.x, p.y - 24, "Нужен детонатор", 1.5);
     }
   }
+}
+
+function updatePlayingLocal(dt) {
+  const { players, mobs, bots, projectiles, bombs, effects, map } = roundState;
+
+  const playerCount = isHotseatMode(match) ? players.length : 1;
+  for (let i = 0; i < playerCount; i++) {
+    updateLocalPlayer(i, dt);
+  }
+
+  if (roundState.paused) {
+    updateEffects(effects, dt);
+    return;
+  }
+
+  roundState.timeLeft -= dt;
 
   updateMobs(mobs, players, projectiles, dt, effects);
   updateBots(bots, players, projectiles, bombs, map, dt, effects, onBotKilled);
@@ -788,8 +1015,23 @@ function collectDrop(player, mob) {
   mob.dropZone = null;
 }
 
+function determineHotseatWinner() {
+  const s0 = roundState.stats[0];
+  const s1 = roundState.stats[1];
+  if (s0.kills !== s1.kills) return s0.kills > s1.kills ? 0 : 1;
+  if (s0.damage !== s1.damage) return s0.damage > s1.damage ? 0 : 1;
+  return null;
+}
+
 function checkRoundEnd() {
-  if (roundState.timeLeft <= 0) endRound(true);
+  if (roundState.timeLeft <= 0) {
+    if (isHotseatMode(match)) {
+      roundState.roundWinner = determineHotseatWinner();
+      endRound(true);
+      return;
+    }
+    endRound(true);
+  }
   if (isVsBotsMode(match) && roundState.bots?.length && roundState.bots.every((b) => !b.alive)) {
     endRound(true);
   }
@@ -797,8 +1039,6 @@ function checkRoundEnd() {
 
 function endRound(won) {
   roundState.roundWon = won;
-  if (won) match.roundWins++;
-  else match.roundLosses++;
 
   roundState.stats = roundState.players.map((p) => ({
     kills: p.killsThisRound,
@@ -806,16 +1046,34 @@ function endRound(won) {
     items: p.itemsThisRound,
   }));
 
-  syncPlayerFromEntity(match.players[0], roundState.players[0]);
-  match.players[0].kills += roundState.stats[0].kills;
-  match.players[0].damageDealt += roundState.stats[0].damage;
+  if (isHotseatMode(match)) {
+    const winner = roundState.roundWinner ?? determineHotseatWinner();
+    roundState.roundWinner = winner;
+    if (winner === 0) match.scores[0]++;
+    else if (winner === 1) match.scores[1]++;
+    for (let i = 0; i < roundState.players.length; i++) {
+      syncPlayerFromEntity(match.players[i], roundState.players[i]);
+      match.players[i].kills += roundState.stats[i].kills;
+      match.players[i].damageDealt += roundState.stats[i].damage;
+    }
+  } else {
+    if (won) match.roundWins++;
+    else match.roundLosses++;
+    syncPlayerFromEntity(match.players[0], roundState.players[0]);
+    match.players[0].kills += roundState.stats[0].kills;
+    match.players[0].damageDealt += roundState.stats[0].damage;
+  }
 
   match.phase = "results";
   roundState.resultsTimer = RESULTS_DURATION;
   renderResultsOverlay(match, roundState, roundState.stats);
   showOverlay("results-overlay", true);
 
-  if (match.round >= MAX_ROUNDS) finishMatch(won ? 0 : null);
+  if (isHotseatMode(match)) {
+    if (match.round >= MAX_ROUNDS) finishMatch(roundState.roundWinner);
+  } else if (match.round >= MAX_ROUNDS) {
+    finishMatch(won ? 0 : null);
+  }
 }
 
 function beginIntermission() {
@@ -831,10 +1089,21 @@ function openIntermissionShop() {
   shopContext = "intermission";
   match.phase = "shop";
   showOverlay("intermission-overlay", false);
-  openShopOverlay(match.players[0], {
-    title: "🛒 Магазин между раундами",
-    startLabel: "Следующий раунд →",
-  });
+  if (isHotseatMode(match)) {
+    hotseatShopSlot = 0;
+    for (const p of match.players) p.ready = false;
+    openShopOverlay(match.players[0], {
+      title: "🛒 Магазин · Hotseat · Игрок 1",
+      showStart: false,
+    });
+    renderHotseatShopFooter(match, hotseatShopSlot);
+    menuNav?.setPadIndex(0);
+  } else {
+    openShopOverlay(match.players[0], {
+      title: "🛒 Магазин между раундами",
+      startLabel: "Следующий раунд →",
+    });
+  }
   menuNav?.reset();
 }
 

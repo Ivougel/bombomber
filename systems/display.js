@@ -8,6 +8,7 @@ const GAME_MODE = {
 const MATCH_MODE = {
   SOLO: "solo",
   VS_BOTS: "vs_bots",
+  HOTSEAT: "hotseat",
 };
 
 /** Активный режим — переключить на VERSUS когда добавим сплит */
@@ -58,21 +59,42 @@ function getActiveLayout(profile) {
   return LAYOUT.SPLIT_HORIZONTAL;
 }
 
-function isSoloMode() {
-  return ACTIVE_GAME_MODE === GAME_MODE.SOLO;
-}
-
 function isVsBotsMode(match) {
   return match?.matchMode === MATCH_MODE.VS_BOTS;
 }
 
+function isHotseatMode(match) {
+  return match?.matchMode === MATCH_MODE.HOTSEAT;
+}
+
+function isSoloMatch(match) {
+  if (isHotseatMode(match)) return false;
+  return ACTIVE_GAME_MODE === GAME_MODE.SOLO;
+}
+
+function isSoloMode(match) {
+  return isSoloMatch(match);
+}
+
 function getMatchModeLabel(matchMode) {
   if (matchMode === MATCH_MODE.VS_BOTS) return "Против ботов";
+  if (matchMode === MATCH_MODE.HOTSEAT) return "Hotseat 1v1";
   return "Solo забег";
 }
 
-function getActivePlayerCount() {
-  return isSoloMode() ? 1 : 2;
+function getActivePlayerCount(match) {
+  if (isHotseatMode(match)) return 2;
+  return isSoloMode(match) ? 1 : 2;
+}
+
+let localVersusUi = false;
+
+function setLocalVersusUi(active) {
+  localVersusUi = !!active;
+}
+
+function showVersusPlayerLabels() {
+  return localVersusUi;
 }
 
 function syncDisplayDataset(profile, layout) {

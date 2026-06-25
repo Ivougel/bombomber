@@ -86,6 +86,18 @@ function updateProjectile(proj, dt, players, mobs, bots, effects, onMobKilled, o
 
   const attacker = players.find((pl) => pl.id === proj.ownerId);
 
+  if (!proj.fromMob) {
+    for (const pl of players) {
+      if (!pl.alive || pl.id === proj.ownerId || pl.invuln > 0 || pl.respawnTimer > 0) continue;
+      if (distSq(proj.x, proj.y, pl.x, pl.y) < (proj.radius + pl.radius) ** 2) {
+        const dmg = playerTakeDamage(pl, proj.damage, effects, proj.x, proj.y);
+        if (dmg > 0 && attacker) attacker.damageThisRound += dmg;
+        proj.alive = false;
+        return;
+      }
+    }
+  }
+
   for (const bot of bots || []) {
     if (!bot.alive) continue;
     if (distSq(proj.x, proj.y, bot.x, bot.y) < (proj.radius + bot.radius) ** 2) {

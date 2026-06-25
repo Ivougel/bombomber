@@ -1,16 +1,16 @@
-/** Лёгкий polling геймпада для solo */
+/** Polling геймпада — до двух падов для hotseat */
 
 const GP_DEADZONE = 0.15;
-let activePad = null;
-let prevButtons = {};
+const prevButtons = [{}, {}];
 
-function pollGamepad() {
+function pollGamepad(index = 0) {
   const pads = navigator.getGamepads?.();
   if (!pads) return null;
+  const connected = [];
   for (const pad of pads) {
-    if (pad?.connected) return pad;
+    if (pad?.connected) connected.push(pad);
   }
-  return null;
+  return connected[index] ?? null;
 }
 
 function applyDeadzone(v) {
@@ -19,11 +19,10 @@ function applyDeadzone(v) {
   return sign * (Math.abs(v) - GP_DEADZONE) / (1 - GP_DEADZONE);
 }
 
-function readGamepadState() {
-  const pad = pollGamepad();
-  activePad = pad;
+function readGamepadState(padIndex = 0) {
+  const pad = pollGamepad(padIndex);
   if (!pad) {
-    prevButtons = {};
+    prevButtons[padIndex] = {};
     return {
       connected: false,
       moveDir: { x: 0, y: 0 },
@@ -51,14 +50,15 @@ function readGamepadState() {
     zoom: btn(4),
     cancel: btn(1),
   };
+  const prev = prevButtons[padIndex] || {};
   const edge = {
-    shoot: held.shoot && !prevButtons.shoot,
-    bomb: held.bomb && !prevButtons.bomb,
-    backpack: held.backpack && !prevButtons.backpack,
-    cancel: held.cancel && !prevButtons.cancel,
-    zoom: held.zoom && !prevButtons.zoom,
+    shoot: held.shoot && !prev.shoot,
+    bomb: held.bomb && !prev.bomb,
+    backpack: held.backpack && !prev.backpack,
+    cancel: held.cancel && !prev.cancel,
+    zoom: held.zoom && !prev.zoom,
   };
-  prevButtons = { ...held };
+  prevButtons[padIndex] = { ...held };
 
   return {
     connected: true,

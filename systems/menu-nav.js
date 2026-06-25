@@ -4,6 +4,7 @@ function createMenuNav() {
   let focusIndex = 0;
   let lastNavAt = 0;
   let prevMenuButtons = {};
+  let padIndex = 0;
   const menuKeys = new Set();
   const NAV_COOLDOWN = 0.16;
 
@@ -44,7 +45,7 @@ function createMenuNav() {
   }
 
   function readMenuPad() {
-    const pad = pollGamepad();
+    const pad = pollGamepad(padIndex);
     if (!pad) {
       prevMenuButtons = {};
       return { dx: 0, dy: 0, confirm: false, back: false };
@@ -166,5 +167,10 @@ function createMenuNav() {
     requestAnimationFrame(() => applyFocus(0));
   }
 
-  return { reset, refresh: () => applyFocus(focusIndex), update };
+  function setPadIndex(index) {
+    padIndex = index === 1 ? 1 : 0;
+    prevMenuButtons = {};
+  }
+
+  return { reset, refresh: () => applyFocus(focusIndex), update, setPadIndex };
 }

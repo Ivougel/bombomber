@@ -128,7 +128,7 @@ function drawPlayer(ctx, p) {
   ctx.fillStyle = hpPct > 0.3 ? "#4c4" : "#c44";
   ctx.fillRect(p.x - barW / 2, p.y - p.radius - 12, barW * hpPct, 5);
 
-  if (!isSoloMode()) {
+  if (showVersusPlayerLabels()) {
     ctx.font = "11px sans-serif";
     ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
@@ -260,7 +260,7 @@ function updateHud(dom, match, roundState) {
   if (phaseEl) phaseEl.textContent = phaseLabel(match.phase);
 
   if (scoreEl) {
-    if (isSoloMode()) {
+    if (isSoloMode(match)) {
       scoreEl.textContent = `Побед: ${match.roundWins} · Поражений: ${match.roundLosses}`;
     } else {
       scoreEl.textContent = `${match.scores[0]} : ${match.scores[1]}`;
@@ -272,10 +272,14 @@ function updateHud(dom, match, roundState) {
       ? roundState.players[roundState.mySlot ?? 0]
       : roundState.players[0];
     if (!p) return;
-    if (p.respawnTimer > 0) {
+    if (p.respawnTimer > 0 && !isHotseatMode(match)) {
       hpEl.textContent = `💀 Респавн ${p.respawnTimer.toFixed(1)}с`;
     } else {
       let hpText = `❤️ ${Math.ceil(p.hp)} / ${p.maxHp}`;
+      if (isHotseatMode(match) && roundState.players[1]) {
+        const p2 = roundState.players[1];
+        hpText = `P1 ${Math.ceil(p.hp)} · P2 ${Math.ceil(p2.hp)}`;
+      }
       if (isVsBotsMode(match) && roundState.bots) {
         const aliveBots = roundState.bots.filter((b) => b.alive).length;
         hpText += ` · 🤖 ${aliveBots}`;
@@ -286,6 +290,8 @@ function updateHud(dom, match, roundState) {
 
   if (scoreEl && roundState.networkMode) {
     scoreEl.textContent = "P1 vs P2 · Сеть";
+  } else if (scoreEl && isHotseatMode(match)) {
+    scoreEl.textContent = `${match.scores[0]} : ${match.scores[1]}`;
   }
 }
 
@@ -311,7 +317,7 @@ function renderResultsOverlay(match, roundState, stats) {
   if (!el) return;
 
   let title;
-  if (isSoloMode()) {
+  if (isSoloMode(match)) {
     title = roundState.roundWon ? "Раунд пройден!" : "Раунд провален";
   } else {
     const winner = roundState.roundWinner;
@@ -321,13 +327,13 @@ function renderResultsOverlay(match, roundState, stats) {
   const stat = stats[0];
   el.innerHTML = `
     <h2>${title}</h2>
-    ${isSoloMode()
+    ${isSoloMode(match)
       ? `<p class="results-score">Побед: ${match.roundWins} · Поражений: ${match.roundLosses}</p>`
       : `<p class="results-score">Счёт: ${match.scores[0]} : ${match.scores[1]}</p>`}
-    <div class="results-stats ${isSoloMode() ? "solo" : ""}">
-      <div><strong>${isSoloMode() ? "Статистика" : "Игрок 1"}</strong><br>
+    <div class="results-stats ${isSoloMode(match) ? "solo" : ""}">
+      <div><strong>${isSoloMode(match) ? "Статистика" : "Игрок 1"}</strong><br>
         Мобов: ${stat.kills} · Урон: ${Math.round(stat.damage)} · Предметов: ${stat.items}</div>
-      ${isSoloMode() ? "" : `<div><strong>Игрок 2</strong><br>Мобов: ${stats[1].kills} · Урон: ${Math.round(stats[1].damage)} · Предметов: ${stats[1].items}</div>`}
+      ${isSoloMode(match) ? "" : `<div><strong>Игрок 2</strong><br>Мобов: ${stats[1].kills} · Урон: ${Math.round(stats[1].damage)} · Предметов: ${stats[1].items}</div>`}
     </div>
     <p class="results-seed">Seed: ${roundState.map?.seed ?? "—"}</p>
   `;
@@ -360,7 +366,7 @@ function renderIntermissionOverlay(match) {
   const el = document.getElementById("intermission-content");
   if (!el) return;
   el.innerHTML = match.players.map((p, i) =>
-    renderBackpackPanel(p, isSoloMode() ? `Рюкзак — ${p.class}` : `Игрок ${i + 1} — ${p.class}`)
+    renderBackpackPanel(p, isSoloMode(match) ? `Рюкзак — ${p.class}` : `Игрок ${i + 1} — ${p.class}`)
   ).join("");
 }
 
@@ -369,7 +375,7 @@ function renderMatchEndOverlay(match) {
   if (!el) return;
 
   let title;
-  if (isSoloMode()) {
+  if (isSoloMode(match)) {
     title = match.roundWins >= 3 ? "Победа в матче!" : "Матч завершён";
   } else {
     title = match.matchWinner === 0 ? "Победитель: Игрок 1"
@@ -407,6 +413,11 @@ function renderClassSelect(match) {
         <strong>Против ботов</strong>
         <span>Боты с аурой, бластером и бомбами</span>
       </div>
+      <div class="mode-card menu-focusable ${mode === MATCH_MODE.HOTSEAT ? "selected" : ""}" data-mode="hotseat">
+        <span class="class-emoji">🎮</span>
+        <strong>Hotseat 1v1</strong>
+        <span>Два геймпада · один экран · PvP</span>
+      </div>
     </div>
 
     <div class="class-cards solo">
@@ -434,6 +445,53 @@ function renderClassSelect(match) {
         </div>
       </div>
       <p class="network-hint" id="network-status"></p>
+    </div>
+  `;
+}
+
+function renderHotseatClassSelect(match, step = 0) {
+  const el = document.getElementById("class-select-content");
+  if (!el) return;
+
+  const slot = step === 1 ? 1 : 0;
+  const myClass = classPick || match?.players?.[slot]?.class || "miner";
+  const padLabel = slot === 0 ? "Геймпад 1 (+ клавиатура)" : "Геймпад 2";
+
+  el.innerHTML = `
+    <p class="network-pregame-code">Hotseat 1v1 · локальный матч</p>
+    <h3 class="network-pregame-title">Игрок ${slot + 1} — выберите класс</h3>
+    <p class="network-pregame-opponent">${padLabel}</p>
+
+    <div class="class-cards solo">
+      <div class="class-card menu-focusable ${myClass === "miner" ? "selected" : ""}" data-class="miner">
+        <span class="class-emoji">⛏️</span>
+        <strong>Шахтёр</strong>
+        <span>Ближний бой · выносливость</span>
+      </div>
+      <div class="class-card menu-focusable ${myClass === "scout" ? "selected" : ""}" data-class="scout">
+        <span class="class-emoji">🏹</span>
+        <strong>Разведчик</strong>
+        <span>Мобильность · дальний урон</span>
+      </div>
+    </div>
+    <p class="class-hint">Геймпад — навигация · A — выбор · RT — стрельба · LB — бомба</p>
+    <button type="button" class="btn menu-focusable" id="btn-to-shop" ${myClass ? "" : "disabled"}>${slot === 0 ? "Далее →" : "В магазин →"}</button>
+    ${slot === 1 ? `<button type="button" class="btn btn-secondary menu-focusable" id="btn-back-hotseat-class">← Игрок 1</button>` : ""}
+  `;
+}
+
+function renderHotseatShopFooter(match, activeSlot = 0) {
+  const el = document.getElementById("shop-network-footer");
+  if (!el) return;
+  const lines = match.players.map((p, i) => {
+    const label = i === activeSlot ? `Игрок ${i + 1} ◀` : `Игрок ${i + 1}`;
+    return `${label}: ${p.ready ? "✅ Готов" : "⏳ Магазин"}`;
+  }).join(" · ");
+  el.innerHTML = `
+    <p class="network-ready-status">${lines}</p>
+    <div class="network-lobby-actions">
+      <button type="button" class="btn btn-secondary menu-focusable" id="btn-hotseat-switch">${activeSlot === 0 ? "Магазин игрока 2 →" : "← Магазин игрока 1"}</button>
+      <button type="button" class="btn menu-focusable" id="btn-hotseat-ready">Готов к бою</button>
     </div>
   `;
 }
