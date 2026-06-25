@@ -290,6 +290,8 @@ function startNetworkRound(payload) {
     const spawn = i === 0 ? map.spawnP1 : map.spawnP2;
     const ent = createPlayerEntity(statePlayer, spawn.x, spawn.y);
     ent.loadout = copyLoadout(statePlayer.loadout);
+    ent.authX = spawn.x;
+    ent.authY = spawn.y;
     return ent;
   });
 
@@ -375,9 +377,11 @@ function applyServerGameState(state) {
 
   const local = roundState.players[mySlot];
   if (local && serverMe) {
+    local.authX = serverMe.x;
+    local.authY = serverMe.y;
     const dx = serverMe.x - local.x;
     const dy = serverMe.y - local.y;
-    if (dx * dx + dy * dy > 80 * 80) {
+    if (dx * dx + dy * dy > 120 * 120) {
       local.x = serverMe.x;
       local.y = serverMe.y;
     }
@@ -729,6 +733,12 @@ function updatePlayingNetwork(dt) {
   };
   updatePlayerEntity(p, dt, fakeInput, camera);
 
+  if (typeof p.authX === "number" && typeof p.authY === "number") {
+    const blend = Math.min(1, dt * 12);
+    p.x += (p.authX - p.x) * blend;
+    p.y += (p.authY - p.y) * blend;
+  }
+
   updateEffects(effects, dt);
 }
 
@@ -818,23 +828,34 @@ function draw() {
   const zoomActive = match.phase === "playing" && input.getPlayer(0).isZoomActive();
 
   let drawPlayers = roundState.players;
+  let drawMobs = roundState.mobs;
+  let drawProjectiles = roundState.projectiles;
+  let drawBombs = roundState.bombs;
+
   if (roundState.networkMode) {
-    const remoteSlot = mySlot === 0 ? 1 : 0;
-    const interp = network.interpolateRemotePlayer(network.getStateAlpha());
-    if (interp && roundState.players[remoteSlot]) {
-      drawPlayers = roundState.players.slice();
-      drawPlayers[remoteSlot] = { ...roundState.players[remoteSlot], x: interp.x, y: interp.y };
-    }
+    const alpha = network.getStateAlpha();
+    const rendered = buildNetworkRenderEntities(
+      network.getPrevState(),
+      network.getLatestState(),
+      alpha,
+      mySlot,
+      roundState.players,
+      network.getExtrapolateSec(),
+    );
+    drawPlayers = rendered.drawPlayers;
+    drawMobs = rendered.drawMobs;
+    drawProjectiles = rendered.drawProjectiles;
+    drawBombs = rendered.drawBombs;
   }
 
   drawWorld(
     ctx,
     roundState.map,
     drawPlayers,
-    roundState.mobs,
+    drawMobs,
     roundState.bots,
-    roundState.projectiles,
-    roundState.bombs,
+    drawProjectiles,
+    drawBombs,
     roundState.effects,
     roundState.fogState,
     camera,

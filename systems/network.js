@@ -235,23 +235,22 @@ function createNetwork() {
 
   function getStateAlpha() {
     if (!latestState) return 1;
-    return Math.min(1, (performance.now() - stateTime) / 50);
+    return Math.min(1, (performance.now() - stateTime) / NETWORK_TICK_MS);
+  }
+
+  function getExtrapolateSec() {
+    return Math.max(0, (performance.now() - stateTime) / 1000);
+  }
+
+  function getPrevState() {
+    return prevState;
   }
 
   function interpolateRemotePlayer(alpha) {
     if (!latestState?.players) return null;
     const remoteSlot = slot === 0 ? 1 : 0;
-    const cur = latestState.players.find((p) => p.id === remoteSlot);
-    if (!cur) return null;
-    if (!prevState?.players) return cur;
-    const prev = prevState.players.find((p) => p.id === remoteSlot);
-    if (!prev) return cur;
     const t = Math.min(1, alpha ?? getStateAlpha());
-    return {
-      ...cur,
-      x: prev.x + (cur.x - prev.x) * t,
-      y: prev.y + (cur.y - prev.y) * t,
-    };
+    return interpolatePlayers(prevState?.players, latestState.players, remoteSlot, t);
   }
 
   function leaveRoom() {
@@ -296,7 +295,9 @@ function createNetwork() {
     getPhase,
     getLobby,
     getLatestState,
+    getPrevState,
     getStateAlpha,
+    getExtrapolateSec,
     interpolateRemotePlayer,
     leaveRoom,
     disconnect,
