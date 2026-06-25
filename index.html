@@ -65,8 +65,18 @@
         <div id="backpack-content"></div>
       </div>
     </div>
+
+    <div id="network-wait-overlay" class="overlay hidden">
+      <div class="modal modal-compact">
+        <h2>🌐 Сетевая комната</h2>
+        <p class="room-code-label">Код комнаты</p>
+        <div class="room-code-display" id="room-code-display">------</div>
+        <p class="network-wait-msg" id="network-wait-msg">Ждём второго игрока...</p>
+      </div>
+    </div>
   </div>
 
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
   <script src="core/constants.js"></script>
   <script src="core/items.js"></script>
   <script src="systems/display.js"></script>
@@ -83,6 +93,7 @@
   <script src="systems/camera.js"></script>
   <script src="systems/gamepad.js"></script>
   <script src="systems/menu-nav.js"></script>
+  <script src="systems/network.js"></script>
   <script src="systems/input.js"></script>
   <script src="systems/shop.js"></script>
   <script src="systems/fog.js"></script>

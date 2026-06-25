@@ -1,0 +1,241 @@
+/** Клиентский WebSocket слой (socket.io) */
+
+const SERVER_URL = (() => {
+  if (typeof window === "undefined") return "";
+  const { hostname, protocol } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:3000";
+  }
+  return "https://mine-ruins-production.up.railway.app";
+})();
+
+function createNetwork() {
+  let socket = null;
+  let connected = false;
+  let roomCode = null;
+  let slot = 0;
+  let host = false;
+  let seed = 0;
+  let phase = "offline";
+  let latestState = null;
+  let prevState = null;
+  let stateTime = 0;
+  let lobby = [];
+  const stateHandlers = [];
+  const eventHandlers = [];
+  const joinHandlers = [];
+  const readyHandlers = [];
+  const roundHandlers = { start: [], end: [] };
+  const errorHandlers = [];
+
+  function connect() {
+    if (socket || typeof io === "undefined") return;
+    socket = io(SERVER_URL, { transports: ["websocket", "polling"] });
+
+    socket.on("connect", () => {
+      connected = true;
+    });
+    socket.on("disconnect", () => {
+      connected = false;
+    });
+    socket.on("room:joined", (payload) => {
+      roomCode = payload.code;
+      slot = payload.slot;
+      host = !!payload.isHost;
+      seed = payload.seed;
+      phase = payload.phase;
+      lobby = payload.players || [];
+      joinHandlers.forEach((cb) => cb(payload));
+    });
+    socket.on("room:ready", (payload) => {
+      phase = "pregame";
+      seed = payload.seed;
+      lobby = payload.players || [];
+      readyHandlers.forEach((cb) => cb(payload));
+    });
+    socket.on("room:error", (err) => {
+      errorHandlers.forEach((cb) => cb(err));
+    });
+    socket.on("room:player_left", (payload) => {
+      lobby = payload.players || [];
+      phase = "waiting";
+    });
+    socket.on("game:state", (state) => {
+      prevState = latestState;
+      latestState = state;
+      stateTime = performance.now();
+      if (state.lobby) lobby = state.lobby;
+      if (state.phase) phase = state.phase;
+      stateHandlers.forEach((cb) => cb(state, prevState));
+    });
+    socket.on("game:event", (ev) => {
+      eventHandlers.forEach((cb) => cb(ev));
+    });
+    socket.on("round:start", (payload) => {
+      phase = "playing";
+      seed = payload.seed;
+      roundHandlers.start.forEach((cb) => cb(payload));
+    });
+    socket.on("round:end", (payload) => {
+      phase = "intermission";
+      roundHandlers.end.forEach((cb) => cb(payload));
+    });
+  }
+
+  function createRoom() {
+    connect();
+    socket.emit("room:create");
+  }
+
+  function joinRoom(code) {
+    connect();
+    socket.emit("room:join", code);
+  }
+
+  function sendInput(input) {
+    if (!connected || !socket) return;
+    socket.emit("player:input", input);
+  }
+
+  function sendReady() {
+    if (!connected || !socket) return;
+    socket.emit("player:ready");
+  }
+
+  function sendClass(klass) {
+    if (!connected || !socket) return;
+    socket.emit("player:class", klass);
+  }
+
+  function sendShopBuy(itemId) {
+    if (!connected || !socket) return;
+    socket.emit("shop:buy", itemId);
+  }
+
+  function sendBackpackUpdate(backpack) {
+    if (!connected || !socket) return;
+    socket.emit("backpack:update", backpack);
+  }
+
+  function onGameState(cb) {
+    stateHandlers.push(cb);
+    return () => stateHandlers.splice(stateHandlers.indexOf(cb), 1);
+  }
+
+  function onGameEvent(cb) {
+    eventHandlers.push(cb);
+    return () => eventHandlers.splice(eventHandlers.indexOf(cb), 1);
+  }
+
+  function onJoined(cb) {
+    joinHandlers.push(cb);
+    return () => joinHandlers.splice(joinHandlers.indexOf(cb), 1);
+  }
+
+  function onRoomReady(cb) {
+    readyHandlers.push(cb);
+    return () => readyHandlers.splice(readyHandlers.indexOf(cb), 1);
+  }
+
+  function onRoundStart(cb) {
+    roundHandlers.start.push(cb);
+    return () => roundHandlers.start.splice(roundHandlers.start.indexOf(cb), 1);
+  }
+
+  function onRoundEnd(cb) {
+    roundHandlers.end.push(cb);
+    return () => roundHandlers.end.splice(roundHandlers.end.indexOf(cb), 1);
+  }
+
+  function onError(cb) {
+    errorHandlers.push(cb);
+    return () => errorHandlers.splice(errorHandlers.indexOf(cb), 1);
+  }
+
+  function isConnected() {
+    return connected && !!roomCode;
+  }
+
+  function isHost() {
+    return host;
+  }
+
+  function getSlot() {
+    return slot;
+  }
+
+  function getRoomCode() {
+    return roomCode;
+  }
+
+  function getSeed() {
+    return seed;
+  }
+
+  function getPhase() {
+    return phase;
+  }
+
+  function getLobby() {
+    return lobby;
+  }
+
+  function getLatestState() {
+    return latestState;
+  }
+
+  function interpolateRemotePlayer(alpha) {
+    if (!latestState?.players) return null;
+    const remoteSlot = slot === 0 ? 1 : 0;
+    const cur = latestState.players.find((p) => p.id === remoteSlot);
+    if (!cur) return null;
+    if (!prevState?.players) return cur;
+    const prev = prevState.players.find((p) => p.id === remoteSlot);
+    if (!prev) return cur;
+    const t = Math.min(1, alpha);
+    return {
+      ...cur,
+      x: prev.x + (cur.x - prev.x) * t,
+      y: prev.y + (cur.y - prev.y) * t,
+    };
+  }
+
+  function disconnect() {
+    socket?.disconnect();
+    socket = null;
+    connected = false;
+    roomCode = null;
+    phase = "offline";
+    latestState = null;
+    prevState = null;
+  }
+
+  return {
+    SERVER_URL,
+    connect,
+    createRoom,
+    joinRoom,
+    sendInput,
+    sendReady,
+    sendClass,
+    sendShopBuy,
+    sendBackpackUpdate,
+    onGameState,
+    onGameEvent,
+    onJoined,
+    onRoomReady,
+    onRoundStart,
+    onRoundEnd,
+    onError,
+    isConnected,
+    isHost,
+    getSlot,
+    getRoomCode,
+    getSeed,
+    getPhase,
+    getLobby,
+    getLatestState,
+    interpolateRemotePlayer,
+    disconnect,
+  };
+}

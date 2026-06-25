@@ -334,6 +334,74 @@ html, body {
   margin-bottom: 12px;
 }
 
+.network-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+.network-section h3 {
+  margin-bottom: 12px;
+  font-size: 1rem;
+}
+
+.network-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.join-row {
+  display: flex;
+  gap: 8px;
+}
+
+.join-code-input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 2px solid #3a4050;
+  background: #1a1c22;
+  color: #fff;
+  font-size: 18px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.room-code-label {
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+
+.room-code-display {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  color: #ffd56a;
+  margin: 12px 0 16px;
+  text-align: center;
+}
+
+.network-wait-msg,
+.network-hint {
+  opacity: 0.75;
+  font-size: 14px;
+  margin-top: 10px;
+}
+
+.network-ready-status {
+  margin: 12px 0;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+#shop-network-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #333;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

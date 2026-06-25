@@ -61,6 +61,7 @@ function renderShopOverlay(player, options = {}) {
     <div class="shop-grid">${itemCards}</div>
 
     ${showStart ? `<button type="button" class="btn menu-focusable" id="btn-shop-start">${startLabel}</button>` : ""}
+    <div id="shop-network-footer"></div>
   `;
 }
 

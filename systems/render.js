@@ -243,8 +243,11 @@ function updateHud(dom, match, roundState) {
     }
   }
 
-  if (hpEl && roundState.players?.[0]) {
-    const p = roundState.players[0];
+  if (hpEl && roundState.players?.length) {
+    const p = roundState.networkMode
+      ? roundState.players[roundState.mySlot ?? 0]
+      : roundState.players[0];
+    if (!p) return;
     if (p.respawnTimer > 0) {
       hpEl.textContent = `💀 Респавн ${p.respawnTimer.toFixed(1)}с`;
     } else {
@@ -255,6 +258,10 @@ function updateHud(dom, match, roundState) {
       }
       hpEl.textContent = hpText;
     }
+  }
+
+  if (scoreEl && roundState.networkMode) {
+    scoreEl.textContent = "P1 vs P2 · Сеть";
   }
 }
 
@@ -392,5 +399,37 @@ function renderClassSelect(match) {
     </div>
     <p class="class-hint">Стрелки / геймпад — навигация · A / Enter — выбор · WASD в бою · Q — лупа · Tab — рюкзак</p>
     <button type="button" class="btn menu-focusable" id="btn-to-shop" ${selectedClass ? "" : "disabled"}>В магазин →</button>
+
+    <div class="network-section">
+      <h3>🌐 Сетевая игра</h3>
+      <div class="network-actions">
+        <button type="button" class="btn menu-focusable" id="btn-create-room">Создать комнату</button>
+        <div class="join-row">
+          <input type="text" id="join-room-code" class="join-code-input menu-focusable" maxlength="6" placeholder="ABC123" autocomplete="off" />
+          <button type="button" class="btn menu-focusable" id="btn-join-room">Войти по коду</button>
+        </div>
+      </div>
+      <p class="network-hint" id="network-status"></p>
+    </div>
+  `;
+}
+
+function renderNetworkWaiting(code, message) {
+  const codeEl = document.getElementById("room-code-display");
+  const msgEl = document.getElementById("network-wait-msg");
+  if (codeEl) codeEl.textContent = code || "------";
+  if (msgEl) msgEl.textContent = message || "Ждём второго игрока...";
+}
+
+function renderNetworkShopFooter(lobby, mySlot) {
+  const el = document.getElementById("shop-network-footer");
+  if (!el) return;
+  const lines = (lobby || []).map((p) => {
+    const label = p.slot === mySlot ? "Вы" : `Игрок ${p.slot + 1}`;
+    return `${label}: ${p.ready ? "✅ Готов" : "⏳ Не готов"}`;
+  }).join(" · ");
+  el.innerHTML = `
+    <p class="network-ready-status">${lines}</p>
+    <button type="button" class="btn menu-focusable" id="btn-network-ready">Готов к бою</button>
   `;
 }

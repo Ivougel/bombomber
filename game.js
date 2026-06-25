@@ -16,12 +16,17 @@ let viewW = 0;
 let viewH = 0;
 
 let menuNav = null;
+let network = null;
+let networkMode = false;
+let serverStateAlpha = 0;
 
 function init() {
   canvas = document.getElementById("game-canvas");
   ctx = canvas.getContext("2d");
   input = createInputSystem();
   menuNav = createMenuNav();
+  network = createNetwork();
+  initNetwork();
 
   hud.timerEl = document.getElementById("hud-timer");
   hud.scoreEl = document.getElementById("hud-score");
@@ -67,6 +72,224 @@ function resize() {
   recalcCamera(camera, w, h, WORLD_W, WORLD_H);
 }
 
+function initNetwork() {
+  document.getElementById("class-select-content")?.addEventListener("click", (e) => {
+    if (e.target.id === "btn-create-room") {
+      network.createRoom();
+      showOverlay("class-overlay", false);
+      showOverlay("network-wait-overlay", true);
+      renderNetworkWaiting("...", "Создаём комнату...");
+      return;
+    }
+    if (e.target.id === "btn-join-room") {
+      const code = document.getElementById("join-room-code")?.value?.trim();
+      if (!code) return;
+      network.joinRoom(code);
+      showOverlay("class-overlay", false);
+      showOverlay("network-wait-overlay", true);
+      renderNetworkWaiting(code.toUpperCase(), "Подключаемся...");
+    }
+  });
+
+  document.getElementById("shop-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id === "btn-network-ready") network.sendReady();
+  });
+
+  network.onJoined((payload) => {
+    renderNetworkWaiting(payload.code, payload.players?.length >= 2
+      ? "Оба игрока в комнате!"
+      : "Ждём второго игрока...");
+  });
+
+  network.onRoomReady((payload) => {
+    networkMode = true;
+    match = createGameState(MATCH_MODE.SOLO);
+    match.matchMode = MATCH_MODE.SOLO;
+    match.players = [createPlayerState(0, "miner"), createPlayerState(1, "scout")];
+    syncLobbyToMatch(network.getLobby());
+    showOverlay("network-wait-overlay", false);
+    showOverlay("class-overlay", true);
+    classPick = match.players[network.getSlot()].class;
+    renderClassSelect(match);
+    menuNav?.reset();
+  });
+
+  network.onGameState((state) => {
+    serverStateAlpha = 0;
+    if (state.lobby) {
+      syncLobbyToMatch(state.lobby);
+      if (networkMode && match.phase === "shop") {
+        renderNetworkShopFooter(state.lobby, network.getSlot());
+        renderShopOverlay(match.players[network.getSlot()], {
+          title: "🛒 Магазин · Сеть",
+          startLabel: "Готов к бою",
+          isNetwork: true,
+        });
+        menuNav?.reset();
+      }
+    }
+    if (state.players && roundState?.networkMode) {
+      applyServerGameState(state);
+    }
+  });
+
+  network.onRoundStart((payload) => {
+    startNetworkRound(payload);
+  });
+
+  network.onRoundEnd(() => {
+    match.phase = "shop";
+    shopContext = "intermission";
+    closeShopOverlay();
+    openNetworkShop();
+  });
+
+  network.onError((err) => {
+    const el = document.getElementById("network-status");
+    if (el) el.textContent = err?.message || "Ошибка сети";
+    renderNetworkWaiting("—", err?.message || "Ошибка");
+  });
+}
+
+function syncLobbyToMatch(lobby) {
+  for (const lp of lobby || []) {
+    const p = match.players[lp.slot];
+    if (!p) continue;
+    p.class = lp.class;
+    p.gold = lp.gold;
+    p.loadout = copyLoadout(lp.loadout || createEmptyLoadout());
+    p.ready = lp.ready;
+  }
+}
+
+function openNetworkShop() {
+  shopContext = "pregame";
+  match.phase = "shop";
+  showOverlay("class-overlay", false);
+  const player = match.players[network.getSlot()];
+  openShopOverlay(player, {
+    title: "🛒 Магазин · Сеть",
+    startLabel: "Готов к бою",
+    isNetwork: true,
+  });
+  renderNetworkShopFooter(network.getLobby(), network.getSlot());
+  menuNav?.reset();
+}
+
+function startNetworkRound(payload) {
+  const seed = payload.seed ?? network.getSeed();
+  const map = generateMap(seed);
+  setCollisionMap(map);
+  syncLobbyToMatch(network.getLobby());
+
+  const mySlot = network.getSlot();
+  const players = match.players.map((statePlayer, i) => {
+    const spawn = i === 0 ? map.spawnP1 : map.spawnP2;
+    const ent = createPlayerEntity(statePlayer, spawn.x, spawn.y);
+    ent.loadout = copyLoadout(statePlayer.loadout);
+    return ent;
+  });
+
+  roundState = {
+    map,
+    players,
+    mobs: [],
+    bots: [],
+    projectiles: [],
+    bombs: [],
+    effects: createEffectsState(),
+    fogState: createFogState(map.fogMap),
+    timeLeft: payload.timeLeft ?? ROUND_DURATION,
+    resultsTimer: 0,
+    intermissionTimer: 0,
+    roundWon: false,
+    stats: match.players.map(() => ({ kills: 0, damage: 0, items: 0 })),
+    inventoryOpen: false,
+    paused: false,
+    networkMode: true,
+    mySlot,
+  };
+
+  match.phase = "playing";
+  match.round = payload.round ?? 1;
+  showOverlay("shop-overlay", false);
+  showOverlay("results-overlay", false);
+  showOverlay("intermission-overlay", false);
+  input.getPlayer(0).resetZoom();
+  mobIdCounter = 0;
+
+  updateFog(roundState.fogState, collectVisionSources(players, []));
+  markFogDirty(roundState.fogState);
+
+  const state = network.getLatestState();
+  if (state) applyServerGameState(state);
+}
+
+function applyServerGameState(state) {
+  if (!roundState) return;
+
+  roundState.timeLeft = state.timeLeft ?? roundState.timeLeft;
+
+  const mySlot = roundState.mySlot ?? network.getSlot();
+  const local = roundState.players[mySlot];
+  const serverMe = state.players?.find((p) => p.id === mySlot);
+  if (local && serverMe) {
+    const dx = serverMe.x - local.x;
+    const dy = serverMe.y - local.y;
+    if (dx * dx + dy * dy > 50 * 50) {
+      local.x = serverMe.x;
+      local.y = serverMe.y;
+    } else {
+      local.x += dx * 0.4;
+      local.y += dy * 0.4;
+    }
+    local.hp = serverMe.hp;
+    local.maxHp = serverMe.maxHp;
+    local.alive = serverMe.alive;
+    local.invuln = serverMe.invuln;
+    local.respawnTimer = serverMe.respawnTimer || 0;
+    local.aimDir = { ...serverMe.aimDir };
+    local.loadout = serverMe.loadout;
+  }
+
+  const remoteSlot = mySlot === 0 ? 1 : 0;
+  let remote = roundState.players[remoteSlot];
+  const serverRemote = state.players?.find((p) => p.id === remoteSlot);
+  if (serverRemote) {
+    if (!remote) {
+      const spawn = remoteSlot === 0 ? roundState.map.spawnP1 : roundState.map.spawnP2;
+      remote = createPlayerEntity(match.players[remoteSlot], spawn.x, spawn.y);
+      roundState.players[remoteSlot] = remote;
+    }
+    const alpha = serverStateAlpha;
+    const prev = network.getLatestState() && network.interpolateRemotePlayer(0);
+    remote.x = serverRemote.x;
+    remote.y = serverRemote.y;
+    if (prev && alpha < 1) {
+      remote.x = prev.x + (serverRemote.x - prev.x) * alpha;
+      remote.y = prev.y + (serverRemote.y - prev.y) * alpha;
+    }
+    remote.hp = serverRemote.hp;
+    remote.maxHp = serverRemote.maxHp;
+    remote.alive = serverRemote.alive;
+    remote.aimDir = { ...serverRemote.aimDir };
+    remote.loadout = serverRemote.loadout;
+    remote.color = serverRemote.color || PLAYER_COLORS[remoteSlot];
+  }
+
+  roundState.mobs = (state.mobs || []).map((m) => ({ ...m, radius: m.radius || 14 }));
+  roundState.projectiles = (state.projectiles || []).map((p) => ({ ...p, alive: true }));
+  roundState.bombs = (state.bombs || []).map((b) => ({ ...b, alive: true }));
+
+  for (const patch of state.tilePatches || []) {
+    const i = patch.row * MAP_W + patch.col;
+    roundState.map.tiles[i] = patch.tile;
+  }
+
+  updateFog(roundState.fogState, collectVisionSources(roundState.players, []));
+  markFogDirty(roundState.fogState);
+}
+
 function bindClassSelect() {
   const root = document.getElementById("class-select-content");
   if (!root || root.dataset.bound) return;
@@ -85,6 +308,10 @@ function bindClassSelect() {
     if (card?.dataset.class) {
       classPick = card.dataset.class;
       match.players[0].class = classPick;
+      if (networkMode) {
+        match.players[network.getSlot()].class = classPick;
+        network.sendClass(classPick);
+      }
       document.querySelectorAll(".class-card").forEach((c) => {
         c.classList.toggle("selected", c.dataset.class === classPick);
       });
@@ -93,7 +320,10 @@ function bindClassSelect() {
       menuNav?.refresh();
       return;
     }
-    if (e.target.id === "btn-to-shop") openPregameShop();
+    if (e.target.id === "btn-to-shop") {
+      if (networkMode) openNetworkShop();
+      else openPregameShop();
+    }
   });
 }
 
@@ -110,6 +340,10 @@ function openPregameShop() {
 }
 
 function onShopBuy(itemId) {
+  if (networkMode && network.isConnected()) {
+    network.sendShopBuy(itemId);
+    return;
+  }
   const player = match.players[0];
   if (tryBuyItem(player, itemId)) {
     renderShopOverlay(player, shopContext === "pregame"
@@ -120,6 +354,10 @@ function onShopBuy(itemId) {
 }
 
 function onShopStart() {
+  if (networkMode && network.isConnected()) {
+    network.sendReady();
+    return;
+  }
   closeShopOverlay();
   if (shopContext === "pregame") {
     startMatch();
@@ -222,6 +460,10 @@ function update(dt) {
     menuNav?.update();
   }
 
+  if (roundState?.networkMode) {
+    serverStateAlpha = Math.min(1, serverStateAlpha + dt * 20);
+  }
+
   if (!roundState) return;
 
   if (match.phase === "playing") {
@@ -274,6 +516,14 @@ function onMobKilled(player, mob) {
 }
 
 function updatePlaying(dt) {
+  if (roundState?.networkMode) {
+    updatePlayingNetwork(dt);
+    return;
+  }
+  updatePlayingLocal(dt);
+}
+
+function updatePlayingLocal(dt) {
   const { players, mobs, bots, projectiles, bombs, effects, map } = roundState;
 
   const p = players[0];
@@ -328,6 +578,43 @@ function updatePlaying(dt) {
   updateEffects(effects, dt);
   updateFog(roundState.fogState, collectVisionSources(players, bots));
   checkRoundEnd();
+}
+
+function updatePlayingNetwork(dt) {
+  const { players, effects } = roundState;
+  const mySlot = roundState.mySlot ?? network.getSlot();
+  const p = players[mySlot];
+  if (!p) return;
+
+  const inp = input.getPlayer(0);
+  inp.refresh({ x: p.x, y: p.y }, camera);
+
+  const packet = inp.captureNetworkInput();
+  if (packet) network.sendInput(packet);
+
+  if (inp.consumeBackpack()) toggleInventory();
+  if (inp.consumeCancel() && roundState.inventoryOpen) closeInventory();
+  inp.consumeZoomToggle();
+
+  if (roundState.paused) {
+    updateEffects(effects, dt);
+    return;
+  }
+
+  const fakeInput = {
+    getMoveDir: () => packet?.moveDir || { x: 0, y: 0 },
+    getAimDir: () => packet?.aimDir || p.aimDir,
+    getFireDir: () => {
+      const a = packet?.aimDir;
+      if (a?.x || a?.y) return a;
+      return packet?.lastAimDir || p.aimDir;
+    },
+    isSprintHeld: () => !!packet?.sprint,
+  };
+  updatePlayerEntity(p, dt, fakeInput, camera);
+
+  updateEffects(effects, dt);
+  updateFog(roundState.fogState, collectVisionSources(players, []));
 }
 
 function collectDrop(player, mob) {
@@ -410,7 +697,8 @@ function draw() {
     return;
   }
 
-  const p = roundState.players[0];
+  const mySlot = roundState.networkMode ? (roundState.mySlot ?? network.getSlot()) : 0;
+  const p = roundState.players[mySlot] || roundState.players[0];
   input.getPlayer(0).refresh({ x: p.x, y: p.y }, camera);
   const zoomActive = match.phase === "playing" && input.getPlayer(0).isZoomActive();
 

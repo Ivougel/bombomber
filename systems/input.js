@@ -123,6 +123,21 @@ function createInputSystem() {
       return !!v;
     },
     consumeAttack() { return this.consumeShoot(); },
+    captureNetworkInput() {
+      const s = this._state;
+      if (!s) return null;
+      const packet = {
+        moveDir: { ...s.moveDir },
+        aimDir: { ...s.aimDir },
+        lastAimDir: { ...s.lastAimDir },
+        sprint: !!s.sprint,
+        shoot: !!s.edgeShoot,
+        bomb: !!s.edgeBomb,
+      };
+      if (edge.shoot) edge.shoot = false;
+      if (edge.bomb) edge.bomb = false;
+      return packet;
+    },
   };
 
   return {
